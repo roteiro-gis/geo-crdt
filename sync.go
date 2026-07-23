@@ -112,8 +112,16 @@ type Snapshot struct {
 
 	Features []FeatureSnapshot `json:"features"`
 
+	// RetainedOps contains every operation beyond its actor's contiguous
+	// VectorClock frontier. Their effects are represented by Features, but
+	// the operations remain syncable until the preceding gaps are filled.
+	// This includes applied, superseded, quarantined, and buffered dots.
+	RetainedOps []DocumentOp `json:"retained_ops,omitempty"`
+
 	// PendingOps are operations that were received but still waiting on
-	// missing dependencies when the snapshot was taken.
+	// missing dependencies when the snapshot was taken. They are listed
+	// separately so restore can rebuild dependency buffers without replaying
+	// already-folded effects.
 	PendingOps []DocumentOp `json:"pending_ops,omitempty"`
 }
 
@@ -196,6 +204,17 @@ func (d *Document) Snapshot(id string) (Snapshot, error) {
 		VectorClock: d.knowledgeLocked(),
 		Applied:     d.appliedClockLocked(),
 	}
+	for _, op := range d.ops {
+		if op.Seq > snapshot.VectorClock[op.SiteID] {
+			snapshot.RetainedOps = append(snapshot.RetainedOps, op.normalize().stripEmbeddedIdentity())
+		}
+	}
+	sort.SliceStable(snapshot.RetainedOps, func(i, j int) bool {
+		if snapshot.RetainedOps[i].SiteID != snapshot.RetainedOps[j].SiteID {
+			return snapshot.RetainedOps[i].SiteID < snapshot.RetainedOps[j].SiteID
+		}
+		return snapshot.RetainedOps[i].Seq < snapshot.RetainedOps[j].Seq
+	})
 
 	ids := make([]ID, 0, len(d.features))
 	for featureID := range d.features {
@@ -276,6 +295,7 @@ func NewDocumentFromSnapshot(siteID string, snapshot Snapshot, opts ...DocumentO
 	doc.baseHash = snapshot.BaseHash
 	doc.clock = snapshot.Clock
 	doc.compacted = cloneVectorClock(snapshot.VectorClock)
+	doc.frontier.frontier = cloneVectorClock(snapshot.VectorClock)
 	doc.localSeq = snapshot.VectorClock[doc.siteID]
 	if applied := snapshot.Applied[doc.siteID]; applied > doc.localSeq {
 		doc.localSeq = applied
@@ -289,24 +309,75 @@ func NewDocumentFromSnapshot(siteID string, snapshot Snapshot, opts ...DocumentO
 		doc.features[state.id] = state
 	}
 
-	// Pending operations re-enter the document directly: they are already
-	// counted by the snapshot's vector clock, so the normal compaction
-	// filter must not drop them.
 	pending := cloneDocumentOps(snapshot.PendingOps)
+	pendingRefs := make(map[OpRef]struct{}, len(pending))
+	for _, op := range pending {
+		pendingRefs[op.ref()] = struct{}{}
+	}
+
+	// Sparse operations whose effects are already in Features re-enter only
+	// the retained log and identity index. Reapplying them would duplicate
+	// non-idempotent bookkeeping in the restored snapshot state.
+	retained := cloneDocumentOps(snapshot.RetainedOps)
+	sort.SliceStable(retained, func(i, j int) bool {
+		if retained[i].SiteID != retained[j].SiteID {
+			return retained[i].SiteID < retained[j].SiteID
+		}
+		return retained[i].Seq < retained[j].Seq
+	})
+	for _, op := range retained {
+		normalized, err := normalizeSnapshotOp(op)
+		if err != nil {
+			return nil, fmt.Errorf("snapshot retained op: %w", err)
+		}
+		if _, isPending := pendingRefs[normalized.ref()]; isPending {
+			continue
+		}
+		if known, dup := doc.seen[normalized.ref()]; dup {
+			hash, hashErr := hashDocumentOp(normalized)
+			if hashErr != nil {
+				return nil, hashErr
+			}
+			if known != hash {
+				return nil, fmt.Errorf("%w: %s", ErrIdentityCollision, normalized.ref())
+			}
+			continue
+		}
+		doc.recordOp(normalized)
+	}
+
+	// Pending operations re-enter the document application path to rebuild
+	// dependency buffers that are not materialized in feature snapshots.
 	sort.SliceStable(pending, func(i, j int) bool {
 		return pending[i].stamp().less(pending[j].stamp())
 	})
 	for _, op := range pending {
-		if err := op.validateEnvelope(); err != nil {
+		normalized, err := normalizeSnapshotOp(op)
+		if err != nil {
 			return nil, fmt.Errorf("snapshot pending op: %w", err)
 		}
-		if _, dup := doc.seen[op.ref()]; dup {
+		if _, dup := doc.seen[normalized.ref()]; dup {
 			continue
 		}
-		doc.applyOpLocked(op)
-		doc.recordOp(op)
+		doc.applyOpLocked(normalized)
+		doc.recordOp(normalized)
 	}
 	return doc, nil
+}
+
+func normalizeSnapshotOp(op DocumentOp) (DocumentOp, error) {
+	op = op.normalize()
+	if op.GeometryOp != nil {
+		geometryOp, err := op.GeometryOp.deriveCreatedIDs()
+		if err != nil {
+			return DocumentOp{}, err
+		}
+		op.GeometryOp = &geometryOp
+	}
+	if err := op.validateEnvelope(); err != nil {
+		return DocumentOp{}, err
+	}
+	return op, nil
 }
 
 func snapshotFeature(state *featureState) (FeatureSnapshot, bool) {

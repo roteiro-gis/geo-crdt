@@ -275,6 +275,74 @@ func TestDeliveryGapSelfHeals(t *testing.T) {
 	}
 }
 
+func TestSnapshotRetainsEveryOperationBeyondDeliveryGap(t *testing.T) {
+	t.Parallel()
+
+	insert := DocumentOp{
+		Type: OpInsertFeature, SiteID: "actor", Seq: 1, Timestamp: 1,
+		FeatureID: "f",
+		Geometry:  json.RawMessage(`{"type":"Point","coordinates":[0,0]}`),
+	}
+	applied := DocumentOp{
+		Type: OpSetProperty, SiteID: "actor", Seq: 3, Timestamp: 3,
+		FeatureID: "f", PropertyKey: "value", PropertyValue: json.RawMessage(`3`),
+	}
+	superseded := DocumentOp{
+		Type: OpSetProperty, SiteID: "actor", Seq: 4, Timestamp: 2,
+		FeatureID: "f", PropertyKey: "value", PropertyValue: json.RawMessage(`2`),
+	}
+	quarantined := DocumentOp{
+		Type: OpSetGeometry, SiteID: "actor", Seq: 5, Timestamp: 5,
+		FeatureID: "f",
+		Geometry:  json.RawMessage(`{"type":"Point","coordinates":[]}`),
+	}
+
+	source := NewDocument("source")
+	if _, err := source.MergeOps([]DocumentOp{insert, applied}); err != nil {
+		t.Fatal(err)
+	}
+	if result, err := source.MergeOps([]DocumentOp{superseded}); err != nil {
+		t.Fatal(err)
+	} else if len(result.Superseded) != 1 {
+		t.Fatalf("expected superseded operation, got %+v", result)
+	}
+	if result, err := source.MergeOps([]DocumentOp{quarantined}); err != nil {
+		t.Fatal(err)
+	} else if len(result.Quarantined) != 1 {
+		t.Fatalf("expected quarantined operation, got %+v", result)
+	}
+	if got := source.VectorClock()["actor"]; got != 1 {
+		t.Fatalf("frontier advanced past missing sequence 2: %d", got)
+	}
+
+	snapshot, err := source.Snapshot("gap")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshot.RetainedOps) != 3 {
+		t.Fatalf("retained operations = %d, want 3", len(snapshot.RetainedOps))
+	}
+	restored, err := NewDocumentFromSnapshot("restored", snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	peer := NewDocument("peer")
+	if _, err := peer.MergeOps([]DocumentOp{insert}); err != nil {
+		t.Fatal(err)
+	}
+	delta := restored.DeltaSince(peer.VectorClock())
+	if len(delta.Ops) != 3 {
+		t.Fatalf("restored delta contains %d sparse operations, want 3", len(delta.Ops))
+	}
+	if _, err := peer.MergeDelta(delta); err != nil {
+		t.Fatal(err)
+	}
+	if a, b := documentJSON(t, restored), documentJSON(t, peer); a != b {
+		t.Fatalf("restored replica lost syncable sparse history:\n%s\n%s", a, b)
+	}
+}
+
 func TestMemStoreRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	store := NewMemStore()
