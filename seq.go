@@ -32,10 +32,7 @@ func (a seqKey) before(b seqKey) bool {
 	if a.initial {
 		return a.pos < b.pos
 	}
-	if a.stamp.Timestamp != b.stamp.Timestamp {
-		return a.stamp.Timestamp > b.stamp.Timestamp
-	}
-	return a.stamp.SiteID > b.stamp.SiteID
+	return b.stamp.less(a.stamp)
 }
 
 // element is one vertex in the ordered tree, including tombstoned vertices

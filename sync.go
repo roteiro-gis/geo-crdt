@@ -7,7 +7,7 @@ import (
 )
 
 // ProtocolVersion is the wire protocol version for Delta and Snapshot.
-const ProtocolVersion = 2
+const ProtocolVersion = 3
 
 // Delta is a versioned, transport-neutral operation batch. It carries the
 // sender's base lineage and compaction watermark so receivers can verify
@@ -294,10 +294,7 @@ func NewDocumentFromSnapshot(siteID string, snapshot Snapshot, opts ...DocumentO
 	// filter must not drop them.
 	pending := cloneDocumentOps(snapshot.PendingOps)
 	sort.SliceStable(pending, func(i, j int) bool {
-		if pending[i].Timestamp != pending[j].Timestamp {
-			return pending[i].Timestamp < pending[j].Timestamp
-		}
-		return pending[i].SiteID < pending[j].SiteID
+		return pending[i].stamp().less(pending[j].stamp())
 	})
 	for _, op := range pending {
 		if err := op.validateEnvelope(); err != nil {

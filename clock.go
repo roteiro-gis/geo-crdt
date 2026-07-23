@@ -31,27 +31,35 @@ func (r OpRef) String() string {
 	return fmt.Sprintf("%s:%d", r.SiteID, r.Seq)
 }
 
-// Stamp orders operations for last-writer-wins resolution: Lamport
-// timestamps order first, site IDs break ties. Unlike sequence numbers,
-// Lamport timestamps advance past every observed timestamp, so a later
-// writer always wins against everything it had seen.
+// Stamp is the total-order key used for last-writer-wins resolution.
+// Lamport timestamps order first, site IDs break cross-actor ties, and the
+// actor sequence breaks ties between operations from the same actor.
 type Stamp struct {
 	Timestamp uint64 `json:"ts"`
 	SiteID    string `json:"site_id"`
+	Seq       uint64 `json:"seq"`
 }
 
 // isSet reports whether the stamp belongs to an operation. The zero value
 // stamps base state and loses to every operation.
 func (s Stamp) isSet() bool {
-	return s.Timestamp != 0 || s.SiteID != ""
+	return s.Timestamp != 0 || s.SiteID != "" || s.Seq != 0
+}
+
+// less reports whether s sorts before other in the total operation order.
+func (s Stamp) less(other Stamp) bool {
+	if s.Timestamp != other.Timestamp {
+		return s.Timestamp < other.Timestamp
+	}
+	if s.SiteID != other.SiteID {
+		return s.SiteID < other.SiteID
+	}
+	return s.Seq < other.Seq
 }
 
 // newer reports whether s wins a last-writer-wins comparison against other.
 func (s Stamp) newer(other Stamp) bool {
-	if s.Timestamp != other.Timestamp {
-		return s.Timestamp > other.Timestamp
-	}
-	return s.SiteID > other.SiteID
+	return other.less(s)
 }
 
 // VectorClock maps site IDs to contiguously received sequence numbers: an

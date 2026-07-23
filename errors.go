@@ -11,6 +11,10 @@ var (
 	// classifies the same operation identically.
 	ErrInvalidOp = errors.New("crdt: invalid operation")
 
+	// ErrIdentityCollision reports reuse of an operation identity with a
+	// different canonical payload.
+	ErrIdentityCollision = errors.New("crdt: operation identity collision")
+
 	// ErrInvalidCommand reports a local command that failed validation
 	// against the current document state.
 	ErrInvalidCommand = errors.New("crdt: invalid command")
