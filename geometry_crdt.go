@@ -25,7 +25,7 @@ type GeometryCRDT struct {
 	initHash      string
 	state         *geometryState
 	ops           []GeometryOp
-	seen          map[OpRef]struct{}
+	seen          map[OpRef]payloadHash
 	syncedThrough uint64 // local seq watermark covered by MarkSynced
 }
 
@@ -50,7 +50,7 @@ func NewGeometryCRDT(siteID string, initialGeometry json.RawMessage) (*GeometryC
 		siteID:   siteID,
 		initHash: hex.EncodeToString(sum[:]),
 		state:    state,
-		seen:     make(map[OpRef]struct{}),
+		seen:     make(map[OpRef]payloadHash),
 	}, nil
 }
 
@@ -113,7 +113,12 @@ func (c *GeometryCRDT) Apply(op GeometryOp) error {
 	op.SiteID = c.siteID
 	op.Seq = nextSeq
 	op.Timestamp = nextClock
-	op = op.truncateCoords(c.state.dims).fillDerivedIDs()
+	op = op.truncateCoords(c.state.dims)
+	derived, err := op.deriveCreatedIDs()
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidCommand, err)
+	}
+	op = derived
 	if err := c.state.validateLocalOp(op); err != nil {
 		return err
 	}
@@ -168,8 +173,14 @@ func (c *GeometryCRDT) MergeOps(ops []GeometryOp) (MergeResult, error) {
 
 func (c *GeometryCRDT) mergeOpsLocked(incoming []GeometryOp) (MergeResult, error) {
 	normalized := make([]GeometryOp, 0, len(incoming))
+	hashes := make(map[OpRef]payloadHash, len(incoming))
 	nextClock := c.clock
 	for _, op := range incoming {
+		var err error
+		op, err = op.deriveCreatedIDs()
+		if err != nil {
+			return MergeResult{}, err
+		}
 		if err := op.validateEnvelope(); err != nil {
 			return MergeResult{}, err
 		}
@@ -177,13 +188,22 @@ func (c *GeometryCRDT) mergeOpsLocked(incoming []GeometryOp) (MergeResult, error
 			nextClock = op.Timestamp
 		}
 		op.Part = cloneRawMessage(op.Part)
+		hash, err := hashGeometryOp(op)
+		if err != nil {
+			return MergeResult{}, err
+		}
+		ref := op.ref()
+		if known, ok := c.seen[ref]; ok && known != hash {
+			return MergeResult{}, fmt.Errorf("%w: %s", ErrIdentityCollision, ref)
+		}
+		if known, ok := hashes[ref]; ok && known != hash {
+			return MergeResult{}, fmt.Errorf("%w: %s", ErrIdentityCollision, ref)
+		}
+		hashes[ref] = hash
 		normalized = append(normalized, op)
 	}
 	sort.SliceStable(normalized, func(i, j int) bool {
-		if normalized[i].Timestamp != normalized[j].Timestamp {
-			return normalized[i].Timestamp < normalized[j].Timestamp
-		}
-		return normalized[i].SiteID < normalized[j].SiteID
+		return normalized[i].stamp().less(normalized[j].stamp())
 	})
 
 	tally := newMergeTally()
@@ -209,7 +229,11 @@ func (c *GeometryCRDT) mergeOpsLocked(incoming []GeometryOp) (MergeResult, error
 
 func (c *GeometryCRDT) recordOp(op GeometryOp) {
 	c.ops = append(c.ops, op)
-	c.seen[op.ref()] = struct{}{}
+	hash, err := hashGeometryOp(op)
+	if err != nil {
+		panic(fmt.Sprintf("crdt: hash validated geometry operation: %v", err))
+	}
+	c.seen[op.ref()] = hash
 }
 
 // PendingOps returns local operations not yet marked synced, along with a

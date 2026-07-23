@@ -102,7 +102,7 @@ type Document struct {
 	features map[ID]*featureState
 
 	ops      []DocumentOp
-	seen     map[OpRef]struct{}
+	seen     map[OpRef]payloadHash
 	frontier *frontierClock
 
 	// compacted records, per site, the sequence number through which
@@ -137,7 +137,7 @@ func NewDocument(siteID string, opts ...DocumentOption) *Document {
 		baseHash:   emptyBaseHash,
 		options:    options,
 		features:   make(map[ID]*featureState),
-		seen:       make(map[OpRef]struct{}),
+		seen:       make(map[OpRef]payloadHash),
 		frontier:   newFrontierClock(),
 		compacted:  make(VectorClock),
 		pendingGen: make(map[OpRef][]DocumentOp),
@@ -364,7 +364,11 @@ func (d *Document) buildLocalOp(seq, timestamp uint64, command any) (DocumentOp,
 	geometryOp.SiteID = d.siteID
 	geometryOp.Seq = seq
 	geometryOp.Timestamp = timestamp
-	geometryOp = geometryOp.truncateCoords(feature.geometry.dims).fillDerivedIDs()
+	geometryOp = geometryOp.truncateCoords(feature.geometry.dims)
+	geometryOp, err = geometryOp.deriveCreatedIDs()
+	if err != nil {
+		return DocumentOp{}, fmt.Errorf("%w: %v", ErrInvalidCommand, err)
+	}
 	if err := feature.geometry.validateLocalOp(geometryOp); err != nil {
 		return DocumentOp{}, err
 	}
@@ -451,9 +455,17 @@ func (d *Document) mergeOpsLocked(incoming []DocumentOp) (MergeResult, error) {
 	// context-free, so a failure is a protocol error, and rejecting the
 	// batch up front keeps merges atomic.
 	normalized := make([]DocumentOp, 0, len(incoming))
+	hashes := make(map[OpRef]payloadHash, len(incoming))
 	nextClock := d.clock
 	for _, op := range incoming {
 		op = op.normalize()
+		if op.GeometryOp != nil {
+			geometryOp, err := op.GeometryOp.deriveCreatedIDs()
+			if err != nil {
+				return MergeResult{}, err
+			}
+			op.GeometryOp = &geometryOp
+		}
 		if err := op.validateEnvelope(); err != nil {
 			return MergeResult{}, err
 		}
@@ -467,13 +479,22 @@ func (d *Document) mergeOpsLocked(incoming []DocumentOp) (MergeResult, error) {
 		if op.Timestamp > nextClock {
 			nextClock = op.Timestamp
 		}
+		hash, err := hashDocumentOp(op)
+		if err != nil {
+			return MergeResult{}, err
+		}
+		ref := op.ref()
+		if known, ok := d.seen[ref]; ok && known != hash {
+			return MergeResult{}, fmt.Errorf("%w: %s", ErrIdentityCollision, ref)
+		}
+		if known, ok := hashes[ref]; ok && known != hash {
+			return MergeResult{}, fmt.Errorf("%w: %s", ErrIdentityCollision, ref)
+		}
+		hashes[ref] = hash
 		normalized = append(normalized, op)
 	}
 	sort.SliceStable(normalized, func(i, j int) bool {
-		if normalized[i].Timestamp != normalized[j].Timestamp {
-			return normalized[i].Timestamp < normalized[j].Timestamp
-		}
-		return normalized[i].SiteID < normalized[j].SiteID
+		return normalized[i].stamp().less(normalized[j].stamp())
 	})
 
 	tally := newMergeTally()
@@ -551,7 +572,11 @@ func (t *mergeTally) finish() MergeResult {
 
 func (d *Document) recordOp(op DocumentOp) {
 	d.ops = append(d.ops, op)
-	d.seen[op.ref()] = struct{}{}
+	hash, err := hashDocumentOp(op)
+	if err != nil {
+		panic(fmt.Sprintf("crdt: hash validated operation: %v", err))
+	}
+	d.seen[op.ref()] = hash
 	d.frontier.observe(op.SiteID, op.Seq)
 }
 
@@ -658,10 +683,7 @@ func (d *Document) adoptGeneration(feature *featureState, ref OpRef, stamp Stamp
 	feature.genStamp = stamp
 
 	sort.SliceStable(waiting, func(i, j int) bool {
-		if waiting[i].Timestamp != waiting[j].Timestamp {
-			return waiting[i].Timestamp < waiting[j].Timestamp
-		}
-		return waiting[i].SiteID < waiting[j].SiteID
+		return waiting[i].stamp().less(waiting[j].stamp())
 	})
 	var outcomes []opOutcome
 	for _, op := range waiting {

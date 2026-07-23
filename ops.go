@@ -80,7 +80,7 @@ func (op GeometryOp) ref() OpRef {
 }
 
 func (op GeometryOp) stamp() Stamp {
-	return Stamp{Timestamp: op.Timestamp, SiteID: op.SiteID}
+	return Stamp{Timestamp: op.Timestamp, SiteID: op.SiteID, Seq: op.Seq}
 }
 
 // InsertedVertexID returns the stable ID assigned to the vertex created by
@@ -127,18 +127,34 @@ func (op GeometryOp) partID() string {
 	return AddedPartID(op.SiteID, op.Seq)
 }
 
-// fillDerivedIDs makes derived IDs explicit so locally recorded operations
-// carry the IDs applications will reference.
-func (op GeometryOp) fillDerivedIDs() GeometryOp {
+// deriveCreatedIDs makes operation-derived IDs explicit. A supplied ID must
+// match the derivation; accepting arbitrary creation IDs would let unrelated
+// operations collide and make state depend on arrival order.
+func (op GeometryOp) deriveCreatedIDs() (GeometryOp, error) {
 	switch op.Action {
 	case ActionInsertVertex:
-		op.VertexID = op.vertexID()
+		expected := InsertedVertexID(op.SiteID, op.Seq)
+		if op.VertexID != "" && op.VertexID != expected {
+			return GeometryOp{}, fmt.Errorf("%w: insert vertex_id %q must equal %q",
+				ErrInvalidOp, op.VertexID, expected)
+		}
+		op.VertexID = expected
 	case ActionAddRing:
-		op.RingID = op.ringID()
+		expected := AddedRingID(op.SiteID, op.Seq)
+		if op.RingID != "" && op.RingID != expected {
+			return GeometryOp{}, fmt.Errorf("%w: add ring_id %q must equal %q",
+				ErrInvalidOp, op.RingID, expected)
+		}
+		op.RingID = expected
 	case ActionAddPart:
-		op.PartID = op.partID()
+		expected := AddedPartID(op.SiteID, op.Seq)
+		if op.PartID != "" && op.PartID != expected {
+			return GeometryOp{}, fmt.Errorf("%w: add part_id %q must equal %q",
+				ErrInvalidOp, op.PartID, expected)
+		}
+		op.PartID = expected
 	}
-	return op
+	return op, nil
 }
 
 // validateEnvelope checks a standalone geometry operation's identity and
@@ -312,7 +328,7 @@ const (
 
 // DocumentOp is the document-level wire operation. Operations are identified
 // by (SiteID, Seq) — the origin site's contiguous sequence number — and
-// ordered for last-writer-wins resolution by (Timestamp, SiteID). They carry
+// ordered for last-writer-wins resolution by (Timestamp, SiteID, Seq). They carry
 // no local bookkeeping and are safe to exchange as deltas in any order:
 // merges buffer operations whose dependencies have not arrived.
 type DocumentOp struct {
@@ -345,7 +361,7 @@ func (op DocumentOp) ref() OpRef {
 }
 
 func (op DocumentOp) stamp() Stamp {
-	return Stamp{Timestamp: op.Timestamp, SiteID: op.SiteID}
+	return Stamp{Timestamp: op.Timestamp, SiteID: op.SiteID, Seq: op.Seq}
 }
 
 // genRef returns the geometry generation an edit targets; the zero OpRef is

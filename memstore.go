@@ -12,14 +12,14 @@ import (
 type MemStore struct {
 	mu        sync.Mutex
 	ops       []DocumentOp
-	seen      map[OpRef]struct{}
+	seen      map[OpRef]payloadHash
 	snapshots map[string]Snapshot
 }
 
 // NewMemStore creates an empty in-memory store.
 func NewMemStore() *MemStore {
 	return &MemStore{
-		seen:      make(map[OpRef]struct{}),
+		seen:      make(map[OpRef]payloadHash),
 		snapshots: make(map[string]Snapshot),
 	}
 }
@@ -28,12 +28,29 @@ func NewMemStore() *MemStore {
 func (s *MemStore) Append(_ context.Context, ops []DocumentOp) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for _, op := range ops {
+	hashes := make([]payloadHash, len(ops))
+	batch := make(map[OpRef]payloadHash, len(ops))
+	for i, op := range ops {
+		hash, err := hashDocumentOp(op)
+		if err != nil {
+			return err
+		}
+		ref := op.ref()
+		if known, ok := s.seen[ref]; ok && known != hash {
+			return fmt.Errorf("%w: %s", ErrIdentityCollision, ref)
+		}
+		if known, ok := batch[ref]; ok && known != hash {
+			return fmt.Errorf("%w: %s", ErrIdentityCollision, ref)
+		}
+		hashes[i] = hash
+		batch[ref] = hash
+	}
+	for i, op := range ops {
 		ref := op.ref()
 		if _, dup := s.seen[ref]; dup {
 			continue
 		}
-		s.seen[ref] = struct{}{}
+		s.seen[ref] = hashes[i]
 		s.ops = append(s.ops, op.normalize())
 	}
 	return nil
