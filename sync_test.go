@@ -160,6 +160,7 @@ func TestSnapshotRestoreResumesOwnNumbering(t *testing.T) {
 		Geometry:  json.RawMessage(`{"type":"Point","coordinates":[0,0]}`),
 	})
 	mustApply(t, source, SetProperty{FeatureID: "f", Key: "k", Value: 1})
+	source.MarkSynced(2)
 
 	snapshot, err := source.Snapshot("cp")
 	if err != nil {
@@ -340,6 +341,48 @@ func TestSnapshotRetainsEveryOperationBeyondDeliveryGap(t *testing.T) {
 	}
 	if a, b := documentJSON(t, restored), documentJSON(t, peer); a != b {
 		t.Fatalf("restored replica lost syncable sparse history:\n%s\n%s", a, b)
+	}
+}
+
+func TestSnapshotRestoresUnsentLocalOutbox(t *testing.T) {
+	t.Parallel()
+
+	source := NewDocument("site-a")
+	mustApply(t, source, InsertFeature{
+		FeatureID: "f",
+		Geometry:  json.RawMessage(`{"type":"Point","coordinates":[0,0]}`),
+	})
+	snapshot, err := source.Snapshot("before-send")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshot.OutboxOps) != 1 || snapshot.SyncedThrough != 0 {
+		t.Fatalf("snapshot outbox state = %d ops through %d", len(snapshot.OutboxOps), snapshot.SyncedThrough)
+	}
+
+	restored, err := NewDocumentFromSnapshot("site-a", snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending, watermark := restored.PendingOps()
+	if len(pending) != 1 || watermark != 1 {
+		t.Fatalf("restored outbox = %d ops through %d, want 1 through 1", len(pending), watermark)
+	}
+	if pending[0].ref() != (OpRef{SiteID: "site-a", Seq: 1}) {
+		t.Fatalf("restored wrong outbox operation: %s", pending[0].ref())
+	}
+
+	source.MarkSynced(1)
+	acknowledged, err := source.Snapshot("after-send")
+	if err != nil {
+		t.Fatal(err)
+	}
+	restored, err = NewDocumentFromSnapshot("site-a", acknowledged)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pending, _ := restored.PendingOps(); len(pending) != 0 {
+		t.Fatalf("acknowledged outbox restored %d operations", len(pending))
 	}
 }
 

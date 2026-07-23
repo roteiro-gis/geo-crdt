@@ -110,6 +110,14 @@ type Snapshot struct {
 	// numbering above this to avoid identity collisions.
 	Applied VectorClock `json:"applied,omitempty"`
 
+	// SyncedThrough is the acknowledged local outbox watermark.
+	SyncedThrough uint64 `json:"synced_through,omitempty"`
+
+	// OutboxOps contains local operations beyond SyncedThrough. Their
+	// effects are already represented by Features, but their payloads must
+	// survive a crash so PendingOps can publish them after restore.
+	OutboxOps []DocumentOp `json:"outbox_ops,omitempty"`
+
 	Features []FeatureSnapshot `json:"features"`
 
 	// RetainedOps contains every operation beyond its actor's contiguous
@@ -196,13 +204,19 @@ func (d *Document) Snapshot(id string) (Snapshot, error) {
 	defer d.mu.Unlock()
 
 	snapshot := Snapshot{
-		Version:     ProtocolVersion,
-		ID:          id,
-		SiteID:      d.siteID,
-		BaseHash:    d.baseHash,
-		Clock:       d.clock,
-		VectorClock: d.knowledgeLocked(),
-		Applied:     d.appliedClockLocked(),
+		Version:       ProtocolVersion,
+		ID:            id,
+		SiteID:        d.siteID,
+		BaseHash:      d.baseHash,
+		Clock:         d.clock,
+		VectorClock:   d.knowledgeLocked(),
+		Applied:       d.appliedClockLocked(),
+		SyncedThrough: d.syncedThrough,
+	}
+	for _, op := range d.ops {
+		if op.SiteID == d.siteID && op.Seq > d.syncedThrough {
+			snapshot.OutboxOps = append(snapshot.OutboxOps, op.normalize().stripEmbeddedIdentity())
+		}
 	}
 	for _, op := range d.ops {
 		if op.Seq > snapshot.VectorClock[op.SiteID] {
@@ -300,6 +314,9 @@ func NewDocumentFromSnapshot(siteID string, snapshot Snapshot, opts ...DocumentO
 	if applied := snapshot.Applied[doc.siteID]; applied > doc.localSeq {
 		doc.localSeq = applied
 	}
+	if doc.siteID == snapshot.SiteID {
+		doc.syncedThrough = snapshot.SyncedThrough
+	}
 
 	for _, fs := range snapshot.Features {
 		state, err := restoreFeature(fs)
@@ -332,6 +349,26 @@ func NewDocumentFromSnapshot(siteID string, snapshot Snapshot, opts ...DocumentO
 		}
 		if _, isPending := pendingRefs[normalized.ref()]; isPending {
 			continue
+		}
+		if known, dup := doc.seen[normalized.ref()]; dup {
+			hash, hashErr := hashDocumentOp(normalized)
+			if hashErr != nil {
+				return nil, hashErr
+			}
+			if known != hash {
+				return nil, fmt.Errorf("%w: %s", ErrIdentityCollision, normalized.ref())
+			}
+			continue
+		}
+		doc.recordOp(normalized)
+	}
+
+	// Outbox effects are also folded into Features. Restore their payloads
+	// into the log so PendingOps can resume publication after a crash.
+	for _, op := range cloneDocumentOps(snapshot.OutboxOps) {
+		normalized, err := normalizeSnapshotOp(op)
+		if err != nil {
+			return nil, fmt.Errorf("snapshot outbox op: %w", err)
 		}
 		if known, dup := doc.seen[normalized.ref()]; dup {
 			hash, hashErr := hashDocumentOp(normalized)
