@@ -110,7 +110,7 @@ func (s *MemStore) Save(_ context.Context, snapshot Snapshot) error {
 	if s.snapshots[snapshot.DocumentID] == nil {
 		s.snapshots[snapshot.DocumentID] = make(map[string]Snapshot)
 	}
-	s.snapshots[snapshot.DocumentID][snapshot.ID] = snapshot
+	s.snapshots[snapshot.DocumentID][snapshot.ID] = cloneSnapshot(snapshot)
 	return nil
 }
 
@@ -122,5 +122,5 @@ func (s *MemStore) Load(_ context.Context, documentID DocumentID, id string) (Sn
 	if !ok {
 		return Snapshot{}, fmt.Errorf("snapshot %q for document %q not found", id, documentID)
 	}
-	return snapshot, nil
+	return cloneSnapshot(snapshot), nil
 }

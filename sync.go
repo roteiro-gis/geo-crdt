@@ -250,6 +250,81 @@ type KeySnapshot struct {
 	Stamp *Stamp `json:"stamp,omitempty"`
 }
 
+func cloneSnapshot(snapshot Snapshot) Snapshot {
+	result := snapshot
+	result.VectorClock = cloneVectorClock(snapshot.VectorClock)
+	result.Applied = cloneVectorClock(snapshot.Applied)
+	result.OutboxOps = cloneDocumentOps(snapshot.OutboxOps)
+	result.RetainedOps = cloneDocumentOps(snapshot.RetainedOps)
+	result.PendingOps = cloneDocumentOps(snapshot.PendingOps)
+	result.Features = make([]FeatureSnapshot, len(snapshot.Features))
+	for i, feature := range snapshot.Features {
+		cloned := feature
+		cloned.CreateReg = cloneStampPointer(feature.CreateReg)
+		cloned.DeleteReg = cloneStampPointer(feature.DeleteReg)
+		cloned.GenID = cloneOpRefPointer(feature.GenID)
+		cloned.GenStamp = cloneStampPointer(feature.GenStamp)
+		cloned.SeenGens = append([]OpRef(nil), feature.SeenGens...)
+		if feature.Properties != nil {
+			cloned.Properties = make(map[string]PropertySnapshot, len(feature.Properties))
+			for key, property := range feature.Properties {
+				property.Value = cloneRawMessage(property.Value)
+				property.Reg = cloneStampPointer(property.Reg)
+				cloned.Properties[key] = property
+			}
+		}
+		if feature.Geometry != nil {
+			geometry := *feature.Geometry
+			geometry.Parts = make([]PartSnapshot, len(feature.Geometry.Parts))
+			for j, part := range feature.Geometry.Parts {
+				part.Key = cloneKeySnapshot(part.Key)
+				part.Rings = make([]RingSnapshot, len(feature.Geometry.Parts[j].Rings))
+				for k, ring := range feature.Geometry.Parts[j].Rings {
+					ring.Key = cloneKeySnapshot(ring.Key)
+					ring.Vertices = make([]VertexSnapshot, len(feature.Geometry.Parts[j].Rings[k].Vertices))
+					for l, vertex := range feature.Geometry.Parts[j].Rings[k].Vertices {
+						vertex.Key = cloneKeySnapshot(vertex.Key)
+						vertex.Coord = append([]float64(nil), vertex.Coord...)
+						vertex.MoveReg = cloneStampPointer(vertex.MoveReg)
+						ring.Vertices[l] = vertex
+					}
+					part.Rings[k] = ring
+				}
+				geometry.Parts[j] = part
+			}
+			cloned.Geometry = &geometry
+		}
+		result.Features[i] = cloned
+	}
+	return result
+}
+
+func cloneStampPointer(stamp *Stamp) *Stamp {
+	if stamp == nil {
+		return nil
+	}
+	cloned := *stamp
+	return &cloned
+}
+
+func cloneOpRefPointer(ref *OpRef) *OpRef {
+	if ref == nil {
+		return nil
+	}
+	cloned := *ref
+	return &cloned
+}
+
+func cloneKeySnapshot(key KeySnapshot) KeySnapshot {
+	result := key
+	if key.Init != nil {
+		init := *key.Init
+		result.Init = &init
+	}
+	result.Stamp = cloneStampPointer(key.Stamp)
+	return result
+}
+
 // Snapshot returns a complete state snapshot of the document.
 func (d *Document) Snapshot(id string) (Snapshot, error) {
 	d.mu.Lock()
