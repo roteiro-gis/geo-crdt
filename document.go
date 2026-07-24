@@ -115,6 +115,7 @@ type Document struct {
 	// syncedThrough is the local sequence watermark returned by PendingOps
 	// and advanced by MarkSynced.
 	syncedThrough uint64
+	issuedThrough uint64
 
 	// pendingGen buffers edit_geometry operations whose target geometry
 	// generation has not arrived yet, keyed by the generation ref.
@@ -248,17 +249,27 @@ func (d *Document) PendingOps() ([]DocumentOp, uint64) {
 			watermark = op.Seq
 		}
 	}
+	if watermark > d.issuedThrough {
+		d.issuedThrough = watermark
+	}
 	return pending, watermark
 }
 
 // MarkSynced records that local operations up to the watermark returned by
 // PendingOps have been sent.
-func (d *Document) MarkSynced(watermark uint64) {
+func (d *Document) MarkSynced(watermark uint64) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	if watermark <= d.syncedThrough {
+		return nil
+	}
+	if watermark > d.issuedThrough || watermark > d.localSeq {
+		return fmt.Errorf("%w: watermark %d was not issued by PendingOps", ErrInvalidSyncState, watermark)
+	}
 	if watermark > d.syncedThrough {
 		d.syncedThrough = watermark
 	}
+	return nil
 }
 
 // --- Local commands ---

@@ -160,7 +160,11 @@ func TestSnapshotRestoreResumesOwnNumbering(t *testing.T) {
 		Geometry:  json.RawMessage(`{"type":"Point","coordinates":[0,0]}`),
 	})
 	mustApply(t, source, SetProperty{FeatureID: "f", Key: "k", Value: 1})
-	source.MarkSynced(2)
+	if _, watermark := source.PendingOps(); watermark != 2 {
+		t.Fatalf("pending watermark = %d, want 2", watermark)
+	} else if err := source.MarkSynced(watermark); err != nil {
+		t.Fatal(err)
+	}
 
 	snapshot, err := source.Snapshot("cp")
 	if err != nil {
@@ -372,7 +376,11 @@ func TestSnapshotRestoresUnsentLocalOutbox(t *testing.T) {
 		t.Fatalf("restored wrong outbox operation: %s", pending[0].ref())
 	}
 
-	source.MarkSynced(1)
+	if _, watermark := source.PendingOps(); watermark != 1 {
+		t.Fatalf("pending watermark = %d, want 1", watermark)
+	} else if err := source.MarkSynced(watermark); err != nil {
+		t.Fatal(err)
+	}
 	acknowledged, err := source.Snapshot("after-send")
 	if err != nil {
 		t.Fatal(err)
@@ -383,6 +391,65 @@ func TestSnapshotRestoresUnsentLocalOutbox(t *testing.T) {
 	}
 	if pending, _ := restored.PendingOps(); len(pending) != 0 {
 		t.Fatalf("acknowledged outbox restored %d operations", len(pending))
+	}
+}
+
+func TestMergeDeltaRejectsUntrustedMetadataAtomically(t *testing.T) {
+	t.Parallel()
+
+	source := NewDocument("test-document", "source")
+	mustApply(t, source, InsertFeature{FeatureID: "f"})
+
+	tests := []struct {
+		name   string
+		mutate func(*Delta)
+	}{
+		{"missing sender", func(delta *Delta) { delta.SiteID = " " }},
+		{"overflow clock", func(delta *Delta) { delta.Clock = ^uint64(0) }},
+		{"overflow vector", func(delta *Delta) {
+			delta.VectorClock["source"] = ^uint64(0)
+		}},
+		{"overflow compacted", func(delta *Delta) {
+			delta.Compacted["source"] = ^uint64(0)
+		}},
+		{"compaction beyond knowledge", func(delta *Delta) {
+			delta.Compacted["unknown"] = 1
+		}},
+		{"operation beyond clock", func(delta *Delta) { delta.Clock = 0 }},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			receiver := NewDocument("test-document", "receiver")
+			delta := source.DeltaSince(nil)
+			test.mutate(&delta)
+			if _, err := receiver.MergeDelta(delta); !errors.Is(err, ErrInvalidOp) {
+				t.Fatalf("metadata error = %v", err)
+			}
+			if receiver.Clock() != 0 || len(receiver.Ops()) != 0 {
+				t.Fatalf("invalid delta mutated receiver: clock=%d ops=%d", receiver.Clock(), len(receiver.Ops()))
+			}
+			mustApply(t, receiver, InsertFeature{FeatureID: "local"})
+			if receiver.Clock() != 1 {
+				t.Fatalf("invalid delta poisoned next local timestamp: %d", receiver.Clock())
+			}
+		})
+	}
+}
+
+func TestMarkSyncedRejectsUnissuedWatermark(t *testing.T) {
+	t.Parallel()
+
+	doc := NewDocument("test-document", "site-a")
+	if err := doc.MarkSynced(100); !errors.Is(err, ErrInvalidSyncState) {
+		t.Fatalf("unissued watermark error = %v", err)
+	}
+	mustApply(t, doc, InsertFeature{FeatureID: "f"})
+	pending, watermark := doc.PendingOps()
+	if len(pending) != 1 || watermark != 1 {
+		t.Fatalf("next local operation was suppressed: %d ops through %d", len(pending), watermark)
+	}
+	if err := doc.MarkSynced(watermark); err != nil {
+		t.Fatal(err)
 	}
 }
 

@@ -19,6 +19,10 @@ var (
 	// against the current document state.
 	ErrInvalidCommand = errors.New("crdt: invalid command")
 
+	// ErrInvalidSyncState reports an acknowledgement or sync envelope that
+	// is inconsistent with locally issued state.
+	ErrInvalidSyncState = errors.New("crdt: invalid sync state")
+
 	// ErrUnknownFeature reports a local command that addresses a feature
 	// that does not exist or is deleted.
 	ErrUnknownFeature = errors.New("crdt: unknown feature")

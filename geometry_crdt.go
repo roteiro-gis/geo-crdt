@@ -27,6 +27,7 @@ type GeometryCRDT struct {
 	ops           []GeometryOp
 	seen          map[OpRef]payloadHash
 	syncedThrough uint64 // local seq watermark covered by MarkSynced
+	issuedThrough uint64 // highest watermark returned by PendingOps
 }
 
 // NewGeometryCRDT creates a replica initialized with a shared base GeoJSON
@@ -255,17 +256,27 @@ func (c *GeometryCRDT) PendingOps() ([]GeometryOp, uint64) {
 			watermark = op.Seq
 		}
 	}
+	if watermark > c.issuedThrough {
+		c.issuedThrough = watermark
+	}
 	return pending, watermark
 }
 
 // MarkSynced records that local operations up to the watermark returned by
 // PendingOps have been sent.
-func (c *GeometryCRDT) MarkSynced(watermark uint64) {
+func (c *GeometryCRDT) MarkSynced(watermark uint64) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if watermark <= c.syncedThrough {
+		return nil
+	}
+	if watermark > c.issuedThrough || watermark > c.localSeq {
+		return fmt.Errorf("%w: watermark %d was not issued by PendingOps", ErrInvalidSyncState, watermark)
+	}
 	if watermark > c.syncedThrough {
 		c.syncedThrough = watermark
 	}
+	return nil
 }
 
 func cloneGeometryOp(op GeometryOp) GeometryOp {
