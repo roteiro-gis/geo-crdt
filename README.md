@@ -36,7 +36,7 @@ go run ./examples/geojson-merge
 ```
 
 ```go
-doc := crdt.NewDocument(crdt.NewSiteID())
+doc := crdt.NewDocument("project-123", crdt.NewSiteID())
 
 err := doc.Apply(crdt.InsertFeature{
 	FeatureID:  "parcel-123",

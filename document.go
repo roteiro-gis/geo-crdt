@@ -93,11 +93,12 @@ type QuarantinedOp struct {
 type Document struct {
 	mu sync.Mutex
 
-	siteID   string
-	clock    uint64 // Lamport timestamp
-	localSeq uint64 // contiguous sequence number of local ops
-	baseHash string
-	options  documentOptions
+	documentID DocumentID
+	siteID     string
+	clock      uint64 // Lamport timestamp
+	localSeq   uint64 // contiguous sequence number of local ops
+	baseHash   string
+	options    documentOptions
 
 	features map[ID]*featureState
 
@@ -120,21 +121,24 @@ type Document struct {
 	pendingGen map[OpRef][]DocumentOp
 }
 
-// NewDocument creates an empty document for one replica site. An empty
-// siteID gets a fresh random identity (see NewSiteID). All documents
-// created empty share a base lineage and can merge with each other.
-func NewDocument(siteID string, opts ...DocumentOption) *Document {
+// NewDocument creates an empty namespaced document for one replica site.
+// Empty document and site IDs receive fresh random identities.
+func NewDocument(documentID DocumentID, siteID string, opts ...DocumentOption) *Document {
 	options := documentOptions{topologyPolicy: AllowInvalidIntermediate}
 	for _, opt := range opts {
 		opt(&options)
+	}
+	if strings.TrimSpace(string(documentID)) == "" {
+		documentID = NewDocumentID()
 	}
 	siteID = strings.TrimSpace(siteID)
 	if siteID == "" {
 		siteID = NewSiteID()
 	}
 	return &Document{
+		documentID: documentID,
 		siteID:     siteID,
-		baseHash:   emptyBaseHash,
+		baseHash:   computeBaseHash(documentID, nil),
 		options:    options,
 		features:   make(map[ID]*featureState),
 		seen:       make(map[OpRef]payloadHash),
@@ -147,12 +151,12 @@ func NewDocument(siteID string, opts ...DocumentOption) *Document {
 // NewDocumentFromFeatureCollection creates a document whose base state is a
 // GeoJSON FeatureCollection. Loading a base adds no operations: replicas
 // that load the same collection share a base lineage and exchange deltas.
-func NewDocumentFromFeatureCollection(siteID string, data json.RawMessage, opts ...DocumentOption) (*Document, error) {
+func NewDocumentFromFeatureCollection(documentID DocumentID, siteID string, data json.RawMessage, opts ...DocumentOption) (*Document, error) {
 	features, err := parseFeatureCollection(data)
 	if err != nil {
 		return nil, err
 	}
-	doc := NewDocument(siteID, opts...)
+	doc := NewDocument(documentID, siteID, opts...)
 	for _, feature := range features {
 		state := &featureState{
 			id:         feature.id,
@@ -171,8 +175,15 @@ func NewDocumentFromFeatureCollection(siteID string, data json.RawMessage, opts 
 		}
 		doc.features[feature.id] = state
 	}
-	doc.baseHash = computeBaseHash(features)
+	doc.baseHash = computeBaseHash(doc.documentID, features)
 	return doc, nil
+}
+
+// DocumentID returns this document's stable namespace.
+func (d *Document) DocumentID() DocumentID {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.documentID
 }
 
 // SiteID returns the local replica site ID.
@@ -416,6 +427,7 @@ func (d *Document) Merge(remote *Document) (MergeResult, error) {
 	remote.mu.Lock()
 	remoteOps := cloneDocumentOps(remote.ops)
 	remoteClock := remote.clock
+	remoteDocumentID := remote.documentID
 	remoteBaseHash := remote.baseHash
 	remoteCompacted := cloneVectorClock(remote.compacted)
 	remote.mu.Unlock()
@@ -423,6 +435,9 @@ func (d *Document) Merge(remote *Document) (MergeResult, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
+	if remoteDocumentID != d.documentID {
+		return MergeResult{}, ErrDocumentMismatch
+	}
 	if remoteBaseHash != d.baseHash {
 		return MergeResult{}, ErrBaseMismatch
 	}
@@ -441,12 +456,14 @@ func (d *Document) Merge(remote *Document) (MergeResult, error) {
 	return result, nil
 }
 
-// MergeOps merges wire operations that share this document's base lineage.
-// Transports that carry lineage metadata should prefer MergeDelta, which
-// verifies it.
-func (d *Document) MergeOps(ops []DocumentOp) (MergeResult, error) {
+// MergeOps merges wire operations explicitly scoped to this document.
+// Transports that carry complete metadata should prefer MergeDelta.
+func (d *Document) MergeOps(documentID DocumentID, ops []DocumentOp) (MergeResult, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	if documentID != d.documentID {
+		return MergeResult{}, ErrDocumentMismatch
+	}
 	return d.mergeOpsLocked(ops)
 }
 

@@ -11,7 +11,7 @@ import (
 )
 
 func main() {
-	doc := crdt.NewDocument("site-a")
+	doc := crdt.NewDocument("test-document", "site-a")
 
 	if err := doc.Apply(crdt.InsertFeature{
 		FeatureID: "parcel-123",

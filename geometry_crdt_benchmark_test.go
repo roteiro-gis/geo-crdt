@@ -100,7 +100,7 @@ func BenchmarkDocumentEditingSession(b *testing.B) {
 	geometry := makePolygonJSON(largeRing(500))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		doc := NewDocument("site-a")
+		doc := NewDocument("test-document", "site-a")
 		if err := doc.Apply(InsertFeature{FeatureID: "f", Geometry: geometry}); err != nil {
 			b.Fatal(err)
 		}

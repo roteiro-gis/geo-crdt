@@ -23,6 +23,10 @@ var (
 	// that does not exist or is deleted.
 	ErrUnknownFeature = errors.New("crdt: unknown feature")
 
+	// ErrDocumentMismatch reports data routed to the wrong document
+	// namespace.
+	ErrDocumentMismatch = errors.New("crdt: document namespace mismatch")
+
 	// ErrBaseMismatch reports an attempt to merge state from a document with
 	// a different base lineage. Replicas can only converge when they share
 	// the same origin base (the same initial FeatureCollection, an empty

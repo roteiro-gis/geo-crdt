@@ -19,12 +19,12 @@ func TestLWWTotalOrderIncludesActorSequence(t *testing.T) {
 		FeatureID: "feature", Properties: map[string]json.RawMessage{"value": json.RawMessage(`"second"`)},
 	}
 
-	left := NewDocument("left")
-	right := NewDocument("right")
-	if _, err := left.MergeOps([]DocumentOp{first, second}); err != nil {
+	left := NewDocument("test-document", "left")
+	right := NewDocument("test-document", "right")
+	if _, err := left.MergeOps("test-document", []DocumentOp{first, second}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := right.MergeOps([]DocumentOp{second, first}); err != nil {
+	if _, err := right.MergeOps("test-document", []DocumentOp{second, first}); err != nil {
 		t.Fatal(err)
 	}
 	leftJSON, err := left.FeatureCollectionJSON()
@@ -74,8 +74,8 @@ func TestIdentityReuseWithDifferentPayloadIsRejectedAtomically(t *testing.T) {
 	collision := first
 	collision.FeatureID = "second"
 
-	doc := NewDocument("local")
-	if _, err := doc.MergeOps([]DocumentOp{first, collision}); !errors.Is(err, ErrIdentityCollision) {
+	doc := NewDocument("test-document", "local")
+	if _, err := doc.MergeOps("test-document", []DocumentOp{first, collision}); !errors.Is(err, ErrIdentityCollision) {
 		t.Fatalf("collision error = %v", err)
 	}
 	if len(doc.Ops()) != 0 {
@@ -83,10 +83,10 @@ func TestIdentityReuseWithDifferentPayloadIsRejectedAtomically(t *testing.T) {
 	}
 
 	store := NewMemStore()
-	if err := store.Append(context.Background(), []DocumentOp{first}); err != nil {
+	if err := store.Append(context.Background(), "test-document", []DocumentOp{first}); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.Append(context.Background(), []DocumentOp{collision}); !errors.Is(err, ErrIdentityCollision) {
+	if err := store.Append(context.Background(), "test-document", []DocumentOp{collision}); !errors.Is(err, ErrIdentityCollision) {
 		t.Fatalf("store collision error = %v", err)
 	}
 }
@@ -102,8 +102,8 @@ func TestIdentityDigestUsesCanonicalJSON(t *testing.T) {
 	same := first
 	same.PropertyValue = json.RawMessage(`{ "b": 2, "a": 1 }`)
 
-	doc := NewDocument("local")
-	result, err := doc.MergeOps([]DocumentOp{first, same})
+	doc := NewDocument("test-document", "local")
+	result, err := doc.MergeOps("test-document", []DocumentOp{first, same})
 	if err != nil {
 		t.Fatal(err)
 	}

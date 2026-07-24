@@ -6,6 +6,16 @@ import "fmt"
 // features.
 type ID string
 
+// DocumentID is the stable namespace for one collaborative document.
+// Operation identities and storage keys are meaningful only within this
+// namespace.
+type DocumentID string
+
+// NewDocumentID returns a cryptographically random document namespace.
+func NewDocumentID() DocumentID {
+	return DocumentID(NewSiteID())
+}
+
 // Coord is a coordinate value. Coordinates are opaque numeric positions;
 // callers own CRS interpretation and transformation. Z is honored only when
 // the target geometry carries three dimensions and is otherwise ignored.
