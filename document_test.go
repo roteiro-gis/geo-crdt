@@ -23,7 +23,7 @@ func testFeatureCollection() json.RawMessage {
 
 func newFCDocument(t testing.TB, siteID string) *Document {
 	t.Helper()
-	doc, err := NewDocumentFromFeatureCollection(siteID, testFeatureCollection())
+	doc, err := NewDocumentFromFeatureCollection("test-document", siteID, testFeatureCollection())
 	if err != nil {
 		t.Fatalf("new document: %v", err)
 	}
@@ -107,8 +107,8 @@ func TestDocumentMergeConvergesPropertiesAndGeometry(t *testing.T) {
 }
 
 func TestDocumentDeltaTransfersInsertedFeature(t *testing.T) {
-	siteA := NewDocument("site-a")
-	siteB := NewDocument("site-b")
+	siteA := NewDocument("test-document", "site-a")
+	siteB := NewDocument("test-document", "site-b")
 
 	mustApply(t, siteA, InsertFeature{
 		FeatureID:  "trail-1",
@@ -134,7 +134,7 @@ func TestDocumentDeltaTransfersInsertedFeature(t *testing.T) {
 }
 
 func TestDocumentMultipartGeometryPartEdit(t *testing.T) {
-	doc := NewDocument("site-a")
+	doc := NewDocument("test-document", "site-a")
 	mustApply(t, doc, InsertFeature{
 		FeatureID: "roads",
 		Geometry:  json.RawMessage(`{"type":"MultiLineString","coordinates":[[[0,0],[1,1]],[[10,10],[11,11]]]}`),
@@ -162,8 +162,8 @@ func TestDocumentMultipartGeometryPartEdit(t *testing.T) {
 // Regression (review finding A2): a concurrent re-insert with a smaller
 // geometry plus an edit against the old geometry must never brick sync.
 func TestDocumentConcurrentReinsertAndEditConverge(t *testing.T) {
-	siteA := NewDocument("site-a")
-	siteB := NewDocument("site-b")
+	siteA := NewDocument("test-document", "site-a")
+	siteB := NewDocument("test-document", "site-b")
 
 	mustApply(t, siteA, InsertFeature{
 		FeatureID: "f",
@@ -210,7 +210,7 @@ func TestDocumentConcurrentReinsertAndEditConverge(t *testing.T) {
 // merge instead of silently diverging.
 func TestDocumentBaseMismatchRejected(t *testing.T) {
 	withBase := newFCDocument(t, "site-a")
-	empty := NewDocument("site-b")
+	empty := NewDocument("test-document", "site-b")
 	mustApply(t, empty, InsertFeature{
 		FeatureID: "x",
 		Geometry:  json.RawMessage(`{"type":"Point","coordinates":[0,0]}`),
@@ -236,8 +236,8 @@ func TestDocumentBaseMismatchRejected(t *testing.T) {
 // Regression (review finding A10): a poisoned timestamp cannot wedge the
 // local clock.
 func TestDocumentClockPoisoningRejected(t *testing.T) {
-	doc := NewDocument("site-a")
-	_, err := doc.MergeOps([]DocumentOp{{
+	doc := NewDocument("test-document", "site-a")
+	_, err := doc.MergeOps("test-document", []DocumentOp{{
 		Type:      OpDeleteFeature,
 		SiteID:    "evil",
 		Seq:       1,
@@ -256,8 +256,8 @@ func TestDocumentClockPoisoningRejected(t *testing.T) {
 // Regression (review finding A11): insert_feature property payloads are
 // validated as JSON at the envelope.
 func TestDocumentInvalidPropertyJSONRejected(t *testing.T) {
-	doc := NewDocument("site-a")
-	_, err := doc.MergeOps([]DocumentOp{{
+	doc := NewDocument("test-document", "site-a")
+	_, err := doc.MergeOps("test-document", []DocumentOp{{
 		Type:       OpInsertFeature,
 		SiteID:     "site-b",
 		Seq:        1,
@@ -277,7 +277,7 @@ func TestDocumentNullGeometryFeature(t *testing.T) {
 		"type":"FeatureCollection",
 		"features":[{"type":"Feature","id":"note-1","geometry":null,"properties":{"text":"hi"}}]
 	}`)
-	doc, err := NewDocumentFromFeatureCollection("site-a", fc)
+	doc, err := NewDocumentFromFeatureCollection("test-document", "site-a", fc)
 	if err != nil {
 		t.Fatalf("null geometry FC: %v", err)
 	}
@@ -307,7 +307,7 @@ func TestDocumentNullGeometryFeature(t *testing.T) {
 }
 
 func TestDocumentSetGeometryPreservesProperties(t *testing.T) {
-	doc := NewDocument("site-a")
+	doc := NewDocument("test-document", "site-a")
 	mustApply(t, doc, InsertFeature{
 		FeatureID:  "f",
 		Geometry:   json.RawMessage(`{"type":"Point","coordinates":[0,0]}`),
@@ -331,7 +331,7 @@ func TestDocumentSetGeometryPreservesProperties(t *testing.T) {
 }
 
 func TestDocumentDeleteAndResurrect(t *testing.T) {
-	siteA := NewDocument("site-a")
+	siteA := NewDocument("test-document", "site-a")
 	mustApply(t, siteA, InsertFeature{
 		FeatureID: "f",
 		Geometry:  json.RawMessage(`{"type":"Point","coordinates":[0,0]}`),
@@ -359,7 +359,7 @@ func TestDocumentDeleteAndResurrect(t *testing.T) {
 // Edits arriving before the insert that defines their geometry generation
 // buffer and drain automatically.
 func TestDocumentEditBeforeInsertBuffers(t *testing.T) {
-	source := NewDocument("site-a")
+	source := NewDocument("test-document", "site-a")
 	mustApply(t, source, InsertFeature{
 		FeatureID: "f",
 		Geometry:  json.RawMessage(`{"type":"LineString","coordinates":[[0,0],[1,1]]}`),
@@ -373,15 +373,15 @@ func TestDocumentEditBeforeInsertBuffers(t *testing.T) {
 	})
 	ops := source.Ops()
 
-	target := NewDocument("site-b")
-	result, err := target.MergeOps(ops[1:]) // edit first
+	target := NewDocument("test-document", "site-b")
+	result, err := target.MergeOps("test-document", ops[1:]) // edit first
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(result.Buffered) != 1 {
 		t.Fatalf("expected edit to buffer, got %+v", result)
 	}
-	if _, err := target.MergeOps(ops[:1]); err != nil {
+	if _, err := target.MergeOps("test-document", ops[:1]); err != nil {
 		t.Fatal(err)
 	}
 	if a, b := documentJSON(t, source), documentJSON(t, target); a != b {
@@ -390,7 +390,7 @@ func TestDocumentEditBeforeInsertBuffers(t *testing.T) {
 }
 
 func TestDocumentAddRingAndPartCommands(t *testing.T) {
-	doc := NewDocument("site-a")
+	doc := NewDocument("test-document", "site-a")
 	mustApply(t, doc, InsertFeature{
 		FeatureID: "parcel",
 		Geometry:  json.RawMessage(`{"type":"Polygon","coordinates":[[[0,0],[20,0],[20,20],[0,20],[0,0]]]}`),
@@ -453,25 +453,25 @@ func TestDocumentPropertyLWWAndTombstones(t *testing.T) {
 
 // Regression: reusing a site identity beyond its local history is detected.
 func TestDocumentSiteIdentityReuseDetected(t *testing.T) {
-	original := NewDocument("site-a")
+	original := NewDocument("test-document", "site-a")
 	mustApply(t, original, InsertFeature{
 		FeatureID: "f",
 		Geometry:  json.RawMessage(`{"type":"Point","coordinates":[0,0]}`),
 	})
-	peer := NewDocument("site-b")
+	peer := NewDocument("test-document", "site-b")
 	if _, err := peer.Merge(original); err != nil {
 		t.Fatal(err)
 	}
 
 	// A fresh document reuses "site-a" without its history.
-	impostor := NewDocument("site-a")
+	impostor := NewDocument("test-document", "site-a")
 	if _, err := impostor.Merge(peer); !errors.Is(err, ErrInvalidOp) {
 		t.Fatalf("expected identity reuse detection, got %v", err)
 	}
 }
 
 func TestDocumentZCoordinateRoundTrip(t *testing.T) {
-	doc := NewDocument("site-a")
+	doc := NewDocument("test-document", "site-a")
 	mustApply(t, doc, InsertFeature{
 		FeatureID: "peak",
 		Geometry:  json.RawMessage(`{"type":"Point","coordinates":[7.6,45.9,4810]}`),
@@ -497,21 +497,21 @@ func TestDocumentConvergence_RandomPartialDeliveries(t *testing.T) {
 			replicaCount := 2 + rng.Intn(3)
 			var allOps []DocumentOp
 			for i := 0; i < replicaCount; i++ {
-				replica := NewDocument(fmt.Sprintf("site-%d", i))
+				replica := NewDocument("test-document", fmt.Sprintf("site-%d", i))
 				seedDocument(t, rng, replica)
 				allOps = append(allOps, replica.Ops()...)
 			}
 
 			var converged string
 			for i := 0; i < replicaCount; i++ {
-				replica := NewDocument(fmt.Sprintf("merge-%d", i))
+				replica := NewDocument("test-document", fmt.Sprintf("merge-%d", i))
 				shuffled := append([]DocumentOp(nil), allOps...)
 				rng.Shuffle(len(shuffled), func(a, b int) {
 					shuffled[a], shuffled[b] = shuffled[b], shuffled[a]
 				})
 				for len(shuffled) > 0 {
 					batch := 1 + rng.Intn(len(shuffled))
-					if _, err := replica.MergeOps(shuffled[:batch]); err != nil {
+					if _, err := replica.MergeOps("test-document", shuffled[:batch]); err != nil {
 						t.Fatalf("merge batch: %v", err)
 					}
 					shuffled = shuffled[batch:]

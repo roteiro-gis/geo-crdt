@@ -21,11 +21,11 @@ func main() {
 		}]
 	}`)
 
-	siteA, err := crdt.NewDocumentFromFeatureCollection("site-a", base)
+	siteA, err := crdt.NewDocumentFromFeatureCollection("test-document", "site-a", base)
 	if err != nil {
 		log.Fatal(err)
 	}
-	siteB, err := crdt.NewDocumentFromFeatureCollection("site-b", base)
+	siteB, err := crdt.NewDocumentFromFeatureCollection("test-document", "site-b", base)
 	if err != nil {
 		log.Fatal(err)
 	}

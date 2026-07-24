@@ -153,13 +153,13 @@ func TestDocumentExportTopologyPolicy(t *testing.T) {
 	// but fails under ValidateOnExport.
 	bowtie := json.RawMessage(`{"type":"Polygon","coordinates":[[[0,0],[10,10],[10,0],[0,10],[0,0]]]}`)
 
-	lenient := NewDocument("site-a")
+	lenient := NewDocument("test-document", "site-a")
 	mustApply(t, lenient, InsertFeature{FeatureID: "f", Geometry: bowtie})
 	if _, err := lenient.FeatureCollectionJSON(); err != nil {
 		t.Fatalf("lenient export should pass: %v", err)
 	}
 
-	strict := NewDocument("site-a", WithTopologyPolicy(ValidateOnExport))
+	strict := NewDocument("test-document", "site-a", WithTopologyPolicy(ValidateOnExport))
 	mustApply(t, strict, InsertFeature{FeatureID: "f", Geometry: bowtie})
 	if _, err := strict.FeatureCollectionJSON(); err == nil {
 		t.Fatal("ValidateOnExport should reject a self-intersecting polygon")
@@ -167,7 +167,7 @@ func TestDocumentExportTopologyPolicy(t *testing.T) {
 }
 
 func TestDocumentPolygonRepairView(t *testing.T) {
-	doc := NewDocument("site-a", WithPolygonRepair(RepairBasicPolygon))
+	doc := NewDocument("test-document", "site-a", WithPolygonRepair(RepairBasicPolygon))
 	// Clockwise exterior; the view repairs orientation without touching
 	// CRDT state.
 	mustApply(t, doc, InsertFeature{

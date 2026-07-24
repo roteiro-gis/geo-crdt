@@ -37,7 +37,7 @@ func ExampleGeometryCRDT() {
 }
 
 func ExampleDocument() {
-	doc := crdt.NewDocument("site-a")
+	doc := crdt.NewDocument("test-document", "site-a")
 
 	err := doc.Apply(crdt.InsertFeature{
 		FeatureID:  "parcel-123",

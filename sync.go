@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 )
 
 // ProtocolVersion is the wire protocol version for Delta and Snapshot.
@@ -14,6 +15,7 @@ const ProtocolVersion = 3
 // compatibility before applying anything.
 type Delta struct {
 	Version     int          `json:"version"`
+	DocumentID  DocumentID   `json:"document_id"`
 	SiteID      string       `json:"site_id"`
 	BaseHash    string       `json:"base_hash"`
 	Clock       uint64       `json:"clock"`
@@ -44,6 +46,7 @@ func (d *Document) DeltaSince(clock VectorClock) Delta {
 
 	return Delta{
 		Version:     ProtocolVersion,
+		DocumentID:  d.documentID,
 		SiteID:      d.siteID,
 		BaseHash:    d.baseHash,
 		Clock:       d.clock,
@@ -60,12 +63,22 @@ func (d *Document) MergeDelta(delta Delta) (MergeResult, error) {
 	if delta.Version != ProtocolVersion {
 		return MergeResult{}, fmt.Errorf("%w: delta version %d", ErrUnsupportedVersion, delta.Version)
 	}
+	if err := validateDeltaMetadata(delta); err != nil {
+		return MergeResult{}, err
+	}
 
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
+	if delta.DocumentID != d.documentID {
+		return MergeResult{}, ErrDocumentMismatch
+	}
 	if delta.BaseHash != d.baseHash {
 		return MergeResult{}, ErrBaseMismatch
+	}
+	if delta.SiteID == d.siteID && delta.VectorClock[delta.SiteID] > d.localSeq {
+		return MergeResult{}, fmt.Errorf("%w: sender %q claims local sequence %d beyond %d",
+			ErrInvalidSyncState, delta.SiteID, delta.VectorClock[delta.SiteID], d.localSeq)
 	}
 	if !delta.Compacted.coveredBy(d.knowledgeLocked()) {
 		return MergeResult{}, ErrCompactionGap
@@ -82,6 +95,44 @@ func (d *Document) MergeDelta(delta Delta) (MergeResult, error) {
 	return result, nil
 }
 
+func validateDeltaMetadata(delta Delta) error {
+	if strings.TrimSpace(delta.SiteID) == "" {
+		return fmt.Errorf("%w: delta site_id is required", ErrInvalidOp)
+	}
+	if delta.Clock >= MaxTimestamp {
+		return fmt.Errorf("%w: delta clock %d out of range", ErrInvalidOp, delta.Clock)
+	}
+	if err := validateWireVectorClock("vector_clock", delta.VectorClock); err != nil {
+		return err
+	}
+	if err := validateWireVectorClock("compacted", delta.Compacted); err != nil {
+		return err
+	}
+	if !delta.Compacted.coveredBy(delta.VectorClock) {
+		return fmt.Errorf("%w: compacted watermark exceeds vector clock", ErrInvalidOp)
+	}
+	for _, op := range delta.Ops {
+		if op.Timestamp > delta.Clock {
+			return fmt.Errorf("%w: operation %s timestamp %d exceeds delta clock %d",
+				ErrInvalidOp, op.ref(), op.Timestamp, delta.Clock)
+		}
+	}
+	return nil
+}
+
+func validateWireVectorClock(name string, clock VectorClock) error {
+	for siteID, seq := range clock {
+		if strings.TrimSpace(siteID) == "" {
+			return fmt.Errorf("%w: %s contains an empty site_id", ErrInvalidOp, name)
+		}
+		if seq >= MaxTimestamp {
+			return fmt.Errorf("%w: %s sequence %d for %q out of range",
+				ErrInvalidOp, name, seq, siteID)
+		}
+	}
+	return nil
+}
+
 // --- Snapshots ---
 
 // Snapshot is a complete, compact serialization of a document's convergent
@@ -94,11 +145,12 @@ func (d *Document) MergeDelta(delta Delta) (MergeResult, error) {
 // and no topology validation or repair is applied. Use
 // FeatureCollectionJSON for policy-enforced GeoJSON exports.
 type Snapshot struct {
-	Version  int    `json:"version"`
-	ID       string `json:"id,omitempty"`
-	SiteID   string `json:"site_id"`
-	BaseHash string `json:"base_hash"`
-	Clock    uint64 `json:"clock"`
+	Version    int        `json:"version"`
+	ID         string     `json:"id,omitempty"`
+	DocumentID DocumentID `json:"document_id"`
+	SiteID     string     `json:"site_id"`
+	BaseHash   string     `json:"base_hash"`
+	Clock      uint64     `json:"clock"`
 
 	// VectorClock is the contiguous-knowledge watermark: operations at or
 	// below it are folded into this snapshot and must not be re-applied.
@@ -206,6 +258,7 @@ func (d *Document) Snapshot(id string) (Snapshot, error) {
 	snapshot := Snapshot{
 		Version:       ProtocolVersion,
 		ID:            id,
+		DocumentID:    d.documentID,
 		SiteID:        d.siteID,
 		BaseHash:      d.baseHash,
 		Clock:         d.clock,
@@ -304,8 +357,11 @@ func NewDocumentFromSnapshot(siteID string, snapshot Snapshot, opts ...DocumentO
 	if snapshot.BaseHash == "" {
 		return nil, fmt.Errorf("%w: snapshot missing base hash", ErrUnsupportedVersion)
 	}
+	if strings.TrimSpace(string(snapshot.DocumentID)) == "" {
+		return nil, fmt.Errorf("%w: snapshot missing document_id", ErrUnsupportedVersion)
+	}
 
-	doc := NewDocument(siteID, opts...)
+	doc := NewDocument(snapshot.DocumentID, siteID, opts...)
 	doc.baseHash = snapshot.BaseHash
 	doc.clock = snapshot.Clock
 	doc.compacted = cloneVectorClock(snapshot.VectorClock)
