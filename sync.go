@@ -429,11 +429,13 @@ func NewDocumentFromSnapshot(siteID string, snapshot Snapshot, opts ...DocumentO
 	if snapshot.Version != ProtocolVersion {
 		return nil, fmt.Errorf("%w: snapshot version %d", ErrUnsupportedVersion, snapshot.Version)
 	}
-	if snapshot.BaseHash == "" {
-		return nil, fmt.Errorf("%w: snapshot missing base hash", ErrUnsupportedVersion)
+	if err := validateSnapshot(snapshot); err != nil {
+		return nil, err
 	}
-	if strings.TrimSpace(string(snapshot.DocumentID)) == "" {
-		return nil, fmt.Errorf("%w: snapshot missing document_id", ErrUnsupportedVersion)
+	requestedSiteID := strings.TrimSpace(siteID)
+	if requestedSiteID != "" && requestedSiteID != snapshot.SiteID && snapshot.Applied[requestedSiteID] != 0 {
+		return nil, fmt.Errorf("%w: site %q already exists in snapshot history",
+			ErrInvalidSyncState, requestedSiteID)
 	}
 
 	doc := NewDocument(snapshot.DocumentID, siteID, opts...)
