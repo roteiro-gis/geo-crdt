@@ -45,6 +45,6 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: stable
-      - run: go test -run=^$ -fuzz=FuzzNewGeometryCRDT -fuzztime=10s .
-      - run: go test -run=^$ -fuzz=FuzzMergeOps -fuzztime=10s .
-      - run: go test -run=^$ -fuzz=FuzzMergeDelta -fuzztime=10s .
+      - run: go test -run=^$ -parallel=1 -fuzz=FuzzNewGeometryCRDT -fuzztime=10s .
+      - run: go test -run=^$ -parallel=1 -fuzz=FuzzMergeOps -fuzztime=10s .
+      - run: go test -run=^$ -parallel=1 -fuzz=FuzzMergeDelta -fuzztime=10s .
