@@ -17,7 +17,7 @@ func main() {
 	store := crdt.NewMemStore()
 
 	// An editing session persists its ops as it syncs.
-	doc := crdt.NewDocument("site-a")
+	doc := crdt.NewDocument("test-document", "site-a")
 	if err := doc.Apply(crdt.InsertFeature{
 		FeatureID:  "hydrant-7",
 		Geometry:   json.RawMessage(`{"type":"Point","coordinates":[-122.4,37.7]}`),
@@ -26,7 +26,7 @@ func main() {
 		log.Fatal(err)
 	}
 	pending, watermark := doc.PendingOps()
-	if err := store.Append(ctx, pending); err != nil {
+	if err := store.Append(ctx, "test-document", pending); err != nil {
 		log.Fatal(err)
 	}
 	doc.MarkSynced(watermark)
@@ -45,13 +45,13 @@ func main() {
 		log.Fatal(err)
 	}
 	pending, watermark = doc.PendingOps()
-	if err := store.Append(ctx, pending); err != nil {
+	if err := store.Append(ctx, "test-document", pending); err != nil {
 		log.Fatal(err)
 	}
 	doc.MarkSynced(watermark)
 
 	// Rehydrate: load the checkpoint, then replay ops beyond it.
-	loaded, err := store.Load(ctx, "nightly")
+	loaded, err := store.Load(ctx, "test-document", "nightly")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -59,11 +59,11 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	ops, err := store.Since(ctx, restored.VectorClock())
+	ops, err := store.Since(ctx, "test-document", restored.VectorClock())
 	if err != nil {
 		log.Fatal(err)
 	}
-	if _, err := restored.MergeOps(ops); err != nil {
+	if _, err := restored.MergeOps("test-document", ops); err != nil {
 		log.Fatal(err)
 	}
 

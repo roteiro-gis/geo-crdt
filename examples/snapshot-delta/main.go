@@ -11,7 +11,7 @@ import (
 )
 
 func main() {
-	siteA := crdt.NewDocument("site-a")
+	siteA := crdt.NewDocument("test-document", "site-a")
 	if err := siteA.Apply(crdt.InsertFeature{
 		FeatureID:  "trail-1",
 		Geometry:   json.RawMessage(`{"type":"LineString","coordinates":[[0,0],[1,1]]}`),

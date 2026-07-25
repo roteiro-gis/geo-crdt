@@ -124,17 +124,9 @@ func featureCollectionFromFeatures(features []Feature) GeoJSONFeatureCollection 
 
 // --- Base lineage hashing ---
 
-// emptyBaseHash is the lineage hash of documents created without a base.
-// All fresh documents share it, so independently created empty replicas can
-// merge.
-var emptyBaseHash = computeBaseHash(nil)
-
 // computeBaseHash hashes the canonical form of a document's original base
-// state. Replicas may only merge when their base hashes match: shared
-// operation logs are meaningless against different bases (see
-// ErrBaseMismatch). Snapshots inherit the hash, so compacted replicas remain
-// mergeable with their lineage.
-func computeBaseHash(features []baseFeature) string {
+// state and namespace. Replicas may only merge when both match.
+func computeBaseHash(documentID DocumentID, features []baseFeature) string {
 	type canonicalFeature struct {
 		ID         string          `json:"id"`
 		Geometry   json.RawMessage `json:"geometry"`
@@ -174,7 +166,10 @@ func computeBaseHash(features []baseFeature) string {
 		canonical = append(canonical, entry)
 	}
 
-	encoded, err := json.Marshal(canonical)
+	encoded, err := json.Marshal(struct {
+		DocumentID DocumentID         `json:"document_id"`
+		Features   []canonicalFeature `json:"features"`
+	}{DocumentID: documentID, Features: canonical})
 	if err != nil {
 		// Canonical features hold only strings and raw JSON.
 		panic(fmt.Sprintf("crdt: marshal canonical base: %v", err))

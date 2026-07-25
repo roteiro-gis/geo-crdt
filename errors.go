@@ -19,9 +19,17 @@ var (
 	// against the current document state.
 	ErrInvalidCommand = errors.New("crdt: invalid command")
 
+	// ErrInvalidSyncState reports an acknowledgement or sync envelope that
+	// is inconsistent with locally issued state.
+	ErrInvalidSyncState = errors.New("crdt: invalid sync state")
+
 	// ErrUnknownFeature reports a local command that addresses a feature
 	// that does not exist or is deleted.
 	ErrUnknownFeature = errors.New("crdt: unknown feature")
+
+	// ErrDocumentMismatch reports data routed to the wrong document
+	// namespace.
+	ErrDocumentMismatch = errors.New("crdt: document namespace mismatch")
 
 	// ErrBaseMismatch reports an attempt to merge state from a document with
 	// a different base lineage. Replicas can only converge when they share

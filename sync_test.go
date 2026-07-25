@@ -75,7 +75,7 @@ func TestSnapshotRoundTripPreservesCRDTState(t *testing.T) {
 }
 
 func TestSnapshotPreservesDeletedFeatureTombstones(t *testing.T) {
-	source := NewDocument("site-a")
+	source := NewDocument("test-document", "site-a")
 	mustApply(t, source, InsertFeature{
 		FeatureID: "f",
 		Geometry:  json.RawMessage(`{"type":"Point","coordinates":[0,0]}`),
@@ -106,7 +106,7 @@ func TestSnapshotPreservesDeletedFeatureTombstones(t *testing.T) {
 // Operations buffered on missing dependencies survive snapshots and drain
 // after restore.
 func TestSnapshotCarriesPendingOps(t *testing.T) {
-	source := NewDocument("site-a")
+	source := NewDocument("test-document", "site-a")
 	mustApply(t, source, InsertFeature{
 		FeatureID: "f",
 		Geometry:  json.RawMessage(`{"type":"LineString","coordinates":[[0,0],[1,1]]}`),
@@ -121,8 +121,8 @@ func TestSnapshotCarriesPendingOps(t *testing.T) {
 	ops := source.Ops()
 
 	// A replica receives only the edit; the defining insert is missing.
-	partial := NewDocument("site-b")
-	result, err := partial.MergeOps(ops[1:])
+	partial := NewDocument("test-document", "site-b")
+	result, err := partial.MergeOps("test-document", ops[1:])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,7 +143,7 @@ func TestSnapshotCarriesPendingOps(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The missing insert arrives; the buffered edit drains.
-	if _, err := restored.MergeOps(ops[:1]); err != nil {
+	if _, err := restored.MergeOps("test-document", ops[:1]); err != nil {
 		t.Fatal(err)
 	}
 	if a, b := documentJSON(t, source), documentJSON(t, restored); a != b {
@@ -154,13 +154,17 @@ func TestSnapshotCarriesPendingOps(t *testing.T) {
 // Regression (review finding A5): restoring a site's own identity resumes
 // sequence numbering above everything the snapshot folded.
 func TestSnapshotRestoreResumesOwnNumbering(t *testing.T) {
-	source := NewDocument("site-a")
+	source := NewDocument("test-document", "site-a")
 	mustApply(t, source, InsertFeature{
 		FeatureID: "f",
 		Geometry:  json.RawMessage(`{"type":"Point","coordinates":[0,0]}`),
 	})
 	mustApply(t, source, SetProperty{FeatureID: "f", Key: "k", Value: 1})
-	source.MarkSynced(2)
+	if _, watermark := source.PendingOps(); watermark != 2 {
+		t.Fatalf("pending watermark = %d, want 2", watermark)
+	} else if err := source.MarkSynced(watermark); err != nil {
+		t.Fatal(err)
+	}
 
 	snapshot, err := source.Snapshot("cp")
 	if err != nil {
@@ -179,7 +183,7 @@ func TestSnapshotRestoreResumesOwnNumbering(t *testing.T) {
 }
 
 func TestSnapshotVersionAndLineageChecks(t *testing.T) {
-	source := NewDocument("site-a")
+	source := NewDocument("test-document", "site-a")
 	snapshot, err := source.Snapshot("cp")
 	if err != nil {
 		t.Fatal(err)
@@ -201,7 +205,7 @@ func TestSnapshotVersionAndLineageChecks(t *testing.T) {
 // A replica that never saw the compacted history must load a snapshot; a
 // delta cannot bridge the gap.
 func TestCompactionGapDetected(t *testing.T) {
-	source := NewDocument("site-a")
+	source := NewDocument("test-document", "site-a")
 	mustApply(t, source, InsertFeature{
 		FeatureID: "f",
 		Geometry:  json.RawMessage(`{"type":"Point","coordinates":[0,0]}`),
@@ -217,7 +221,7 @@ func TestCompactionGapDetected(t *testing.T) {
 	}
 	mustApply(t, compacted, SetProperty{FeatureID: "f", Key: "k", Value: 1})
 
-	fresh := NewDocument("site-c")
+	fresh := NewDocument("test-document", "site-c")
 	if _, err := fresh.MergeDelta(compacted.DeltaSince(fresh.VectorClock())); !errors.Is(err, ErrCompactionGap) {
 		t.Fatalf("expected ErrCompactionGap, got %v", err)
 	}
@@ -241,7 +245,7 @@ func TestCompactionGapDetected(t *testing.T) {
 // The vector clock only advances through contiguous sequence prefixes, so a
 // dropped op is always re-requested and sync self-heals.
 func TestDeliveryGapSelfHeals(t *testing.T) {
-	source := NewDocument("site-a")
+	source := NewDocument("test-document", "site-a")
 	mustApply(t, source, InsertFeature{
 		FeatureID: "f",
 		Geometry:  json.RawMessage(`{"type":"Point","coordinates":[0,0]}`),
@@ -250,9 +254,9 @@ func TestDeliveryGapSelfHeals(t *testing.T) {
 	mustApply(t, source, SetProperty{FeatureID: "f", Key: "b", Value: 2})
 	ops := source.Ops()
 
-	receiver := NewDocument("site-b")
+	receiver := NewDocument("test-document", "site-b")
 	// Ops 1 and 3 arrive; op 2 is lost in transit.
-	if _, err := receiver.MergeOps([]DocumentOp{ops[0], ops[2]}); err != nil {
+	if _, err := receiver.MergeOps("test-document", []DocumentOp{ops[0], ops[2]}); err != nil {
 		t.Fatal(err)
 	}
 	if got := receiver.VectorClock()["site-a"]; got != 1 {
@@ -298,16 +302,16 @@ func TestSnapshotRetainsEveryOperationBeyondDeliveryGap(t *testing.T) {
 		Geometry:  json.RawMessage(`{"type":"Point","coordinates":[]}`),
 	}
 
-	source := NewDocument("source")
-	if _, err := source.MergeOps([]DocumentOp{insert, applied}); err != nil {
+	source := NewDocument("test-document", "source")
+	if _, err := source.MergeOps("test-document", []DocumentOp{insert, applied}); err != nil {
 		t.Fatal(err)
 	}
-	if result, err := source.MergeOps([]DocumentOp{superseded}); err != nil {
+	if result, err := source.MergeOps("test-document", []DocumentOp{superseded}); err != nil {
 		t.Fatal(err)
 	} else if len(result.Superseded) != 1 {
 		t.Fatalf("expected superseded operation, got %+v", result)
 	}
-	if result, err := source.MergeOps([]DocumentOp{quarantined}); err != nil {
+	if result, err := source.MergeOps("test-document", []DocumentOp{quarantined}); err != nil {
 		t.Fatal(err)
 	} else if len(result.Quarantined) != 1 {
 		t.Fatalf("expected quarantined operation, got %+v", result)
@@ -328,8 +332,8 @@ func TestSnapshotRetainsEveryOperationBeyondDeliveryGap(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	peer := NewDocument("peer")
-	if _, err := peer.MergeOps([]DocumentOp{insert}); err != nil {
+	peer := NewDocument("test-document", "peer")
+	if _, err := peer.MergeOps("test-document", []DocumentOp{insert}); err != nil {
 		t.Fatal(err)
 	}
 	delta := restored.DeltaSince(peer.VectorClock())
@@ -347,7 +351,7 @@ func TestSnapshotRetainsEveryOperationBeyondDeliveryGap(t *testing.T) {
 func TestSnapshotRestoresUnsentLocalOutbox(t *testing.T) {
 	t.Parallel()
 
-	source := NewDocument("site-a")
+	source := NewDocument("test-document", "site-a")
 	mustApply(t, source, InsertFeature{
 		FeatureID: "f",
 		Geometry:  json.RawMessage(`{"type":"Point","coordinates":[0,0]}`),
@@ -372,7 +376,11 @@ func TestSnapshotRestoresUnsentLocalOutbox(t *testing.T) {
 		t.Fatalf("restored wrong outbox operation: %s", pending[0].ref())
 	}
 
-	source.MarkSynced(1)
+	if _, watermark := source.PendingOps(); watermark != 1 {
+		t.Fatalf("pending watermark = %d, want 1", watermark)
+	} else if err := source.MarkSynced(watermark); err != nil {
+		t.Fatal(err)
+	}
 	acknowledged, err := source.Snapshot("after-send")
 	if err != nil {
 		t.Fatal(err)
@@ -386,17 +394,76 @@ func TestSnapshotRestoresUnsentLocalOutbox(t *testing.T) {
 	}
 }
 
+func TestMergeDeltaRejectsUntrustedMetadataAtomically(t *testing.T) {
+	t.Parallel()
+
+	source := NewDocument("test-document", "source")
+	mustApply(t, source, InsertFeature{FeatureID: "f"})
+
+	tests := []struct {
+		name   string
+		mutate func(*Delta)
+	}{
+		{"missing sender", func(delta *Delta) { delta.SiteID = " " }},
+		{"overflow clock", func(delta *Delta) { delta.Clock = ^uint64(0) }},
+		{"overflow vector", func(delta *Delta) {
+			delta.VectorClock["source"] = ^uint64(0)
+		}},
+		{"overflow compacted", func(delta *Delta) {
+			delta.Compacted["source"] = ^uint64(0)
+		}},
+		{"compaction beyond knowledge", func(delta *Delta) {
+			delta.Compacted["unknown"] = 1
+		}},
+		{"operation beyond clock", func(delta *Delta) { delta.Clock = 0 }},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			receiver := NewDocument("test-document", "receiver")
+			delta := source.DeltaSince(nil)
+			test.mutate(&delta)
+			if _, err := receiver.MergeDelta(delta); !errors.Is(err, ErrInvalidOp) {
+				t.Fatalf("metadata error = %v", err)
+			}
+			if receiver.Clock() != 0 || len(receiver.Ops()) != 0 {
+				t.Fatalf("invalid delta mutated receiver: clock=%d ops=%d", receiver.Clock(), len(receiver.Ops()))
+			}
+			mustApply(t, receiver, InsertFeature{FeatureID: "local"})
+			if receiver.Clock() != 1 {
+				t.Fatalf("invalid delta poisoned next local timestamp: %d", receiver.Clock())
+			}
+		})
+	}
+}
+
+func TestMarkSyncedRejectsUnissuedWatermark(t *testing.T) {
+	t.Parallel()
+
+	doc := NewDocument("test-document", "site-a")
+	if err := doc.MarkSynced(100); !errors.Is(err, ErrInvalidSyncState) {
+		t.Fatalf("unissued watermark error = %v", err)
+	}
+	mustApply(t, doc, InsertFeature{FeatureID: "f"})
+	pending, watermark := doc.PendingOps()
+	if len(pending) != 1 || watermark != 1 {
+		t.Fatalf("next local operation was suppressed: %d ops through %d", len(pending), watermark)
+	}
+	if err := doc.MarkSynced(watermark); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestMemStoreRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	store := NewMemStore()
 
-	source := NewDocument("site-a")
+	source := NewDocument("test-document", "site-a")
 	mustApply(t, source, InsertFeature{
 		FeatureID: "f",
 		Geometry:  json.RawMessage(`{"type":"Point","coordinates":[0,0]}`),
 	})
 	pending, watermark := source.PendingOps()
-	if err := store.Append(ctx, pending); err != nil {
+	if err := store.Append(ctx, "test-document", pending); err != nil {
 		t.Fatal(err)
 	}
 	source.MarkSynced(watermark)
@@ -410,7 +477,7 @@ func TestMemStoreRoundTrip(t *testing.T) {
 	}
 
 	// Rehydrate: snapshot + ops beyond it.
-	loadedSnapshot, err := store.Load(ctx, "cp-1")
+	loadedSnapshot, err := store.Load(ctx, "test-document", "cp-1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -418,11 +485,11 @@ func TestMemStoreRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ops, err := store.Since(ctx, restored.VectorClock())
+	ops, err := store.Since(ctx, "test-document", restored.VectorClock())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := restored.MergeOps(ops); err != nil {
+	if _, err := restored.MergeOps("test-document", ops); err != nil {
 		t.Fatal(err)
 	}
 	if a, b := documentJSON(t, source), documentJSON(t, restored); a != b {
@@ -430,10 +497,10 @@ func TestMemStoreRoundTrip(t *testing.T) {
 	}
 
 	// Duplicate appends are ignored.
-	if err := store.Append(ctx, pending); err != nil {
+	if err := store.Append(ctx, "test-document", pending); err != nil {
 		t.Fatal(err)
 	}
-	all, err := store.Since(ctx, nil)
+	all, err := store.Since(ctx, "test-document", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -59,7 +59,7 @@ func FuzzMergeOps(f *testing.F) {
 // FuzzMergeDelta feeds arbitrary JSON through the wire-decoding and merge
 // paths of a document.
 func FuzzMergeDelta(f *testing.F) {
-	seed := NewDocument("seed")
+	seed := NewDocument("test-document", "seed")
 	if err := seed.Apply(InsertFeature{
 		FeatureID: "f",
 		Geometry:  json.RawMessage(`{"type":"Polygon","coordinates":[[[0,0],[10,0],[10,10],[0,10],[0,0]]]}`),
@@ -80,7 +80,7 @@ func FuzzMergeDelta(f *testing.F) {
 		if err := json.Unmarshal(data, &delta); err != nil {
 			return
 		}
-		doc := NewDocument("fuzz-doc")
+		doc := NewDocument("test-document", "fuzz-doc")
 		if err := doc.Apply(InsertFeature{
 			FeatureID: "f",
 			Geometry:  json.RawMessage(`{"type":"Polygon","coordinates":[[[0,0],[10,0],[10,10],[0,10],[0,0]]]}`),
