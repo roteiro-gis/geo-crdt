@@ -438,11 +438,10 @@ func (op DocumentOp) normalize() DocumentOp {
 		op.Gen = &gen
 	}
 	if op.GeometryOp != nil {
-		geometryOp := *op.GeometryOp
+		geometryOp := cloneGeometryOp(*op.GeometryOp)
 		geometryOp.SiteID = op.SiteID
 		geometryOp.Seq = op.Seq
 		geometryOp.Timestamp = op.Timestamp
-		geometryOp.Part = cloneRawMessage(geometryOp.Part)
 		op.GeometryOp = &geometryOp
 	}
 	return op

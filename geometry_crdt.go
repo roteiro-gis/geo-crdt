@@ -177,6 +177,7 @@ func (c *GeometryCRDT) mergeOpsLocked(incoming []GeometryOp) (MergeResult, error
 	hashes := make(map[OpRef]payloadHash, len(incoming))
 	nextClock := c.clock
 	for _, op := range incoming {
+		op = cloneGeometryOp(op)
 		var err error
 		op, err = op.deriveCreatedIDs()
 		if err != nil {
@@ -188,7 +189,6 @@ func (c *GeometryCRDT) mergeOpsLocked(incoming []GeometryOp) (MergeResult, error
 		if op.Timestamp > nextClock {
 			nextClock = op.Timestamp
 		}
-		op.Part = cloneRawMessage(op.Part)
 		hash, err := hashGeometryOp(op)
 		if err != nil {
 			return MergeResult{}, err
