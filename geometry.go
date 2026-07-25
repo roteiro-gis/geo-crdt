@@ -56,10 +56,7 @@ func setKeyBefore(a, b seqKey) bool {
 	if a.initial {
 		return a.pos < b.pos
 	}
-	if a.stamp.Timestamp != b.stamp.Timestamp {
-		return a.stamp.Timestamp < b.stamp.Timestamp
-	}
-	return a.stamp.SiteID < b.stamp.SiteID
+	return a.stamp.less(b.stamp)
 }
 
 type depKind int
@@ -868,10 +865,7 @@ func (g *geometryState) pendingOps() []GeometryOp {
 		ops = append(ops, waiting...)
 	}
 	sort.Slice(ops, func(i, j int) bool {
-		if ops[i].Timestamp != ops[j].Timestamp {
-			return ops[i].Timestamp < ops[j].Timestamp
-		}
-		return ops[i].SiteID < ops[j].SiteID
+		return ops[i].stamp().less(ops[j].stamp())
 	})
 	return ops
 }

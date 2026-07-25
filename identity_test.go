@@ -64,6 +64,47 @@ func TestCreatedElementIDsAreDerived(t *testing.T) {
 	}
 }
 
+func TestAddedRingOrderIncludesActorSequence(t *testing.T) {
+	t.Parallel()
+
+	initial := json.RawMessage(
+		`{"type":"Polygon","coordinates":[[[0,0],[10,0],[10,10],[0,0]]]}`,
+	)
+	left, err := NewGeometryCRDT("left", initial)
+	if err != nil {
+		t.Fatal(err)
+	}
+	right, err := NewGeometryCRDT("right", initial)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := GeometryOp{
+		Action: ActionAddRing, SiteID: "actor", Seq: 1, Timestamp: 7,
+		PartID: InitialPartID(0),
+		Ring:   [][]float64{{1, 1}, {2, 1}, {1, 2}},
+	}
+	second := GeometryOp{
+		Action: ActionAddRing, SiteID: "actor", Seq: 2, Timestamp: 7,
+		PartID: InitialPartID(0),
+		Ring:   [][]float64{{3, 3}, {4, 3}, {3, 4}},
+	}
+	if _, err := left.MergeOps([]GeometryOp{first}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := left.MergeOps([]GeometryOp{second}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := right.MergeOps([]GeometryOp{second}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := right.MergeOps([]GeometryOp{first}); err != nil {
+		t.Fatal(err)
+	}
+	if string(left.Geometry()) != string(right.Geometry()) {
+		t.Fatalf("added ring order depends on arrival:\nleft  %s\nright %s", left.Geometry(), right.Geometry())
+	}
+}
+
 func TestIdentityReuseWithDifferentPayloadIsRejectedAtomically(t *testing.T) {
 	t.Parallel()
 
