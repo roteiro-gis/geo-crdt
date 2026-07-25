@@ -41,6 +41,10 @@ var (
 	// protocol version.
 	ErrUnsupportedVersion = errors.New("crdt: unsupported protocol version")
 
+	// ErrInvalidSnapshot reports a malformed or internally inconsistent
+	// snapshot that cannot safely be restored.
+	ErrInvalidSnapshot = errors.New("crdt: invalid snapshot")
+
 	// ErrCompactionGap reports that the sender compacted operations this
 	// replica has never seen. The receiver must load a full snapshot from
 	// the sender instead of merging deltas.
