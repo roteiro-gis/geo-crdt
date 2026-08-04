@@ -1,0 +1,147 @@
+{
+  "version": 3,
+  "document_id": "protocol-golden",
+  "site_id": "actor-a",
+  "base_hash": "b22e8ba77763eecb370574e9d94dfa602649c93cda66600eeaa568de86b2879a",
+  "clock": 7,
+  "vector_clock": {
+    "actor-a": 7
+  },
+  "ops": [
+    {
+      "type": "insert_feature",
+      "site_id": "actor-a",
+      "seq": 1,
+      "ts": 1,
+      "feature_id": "parcel",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              0,
+              0
+            ],
+            [
+              10,
+              0
+            ],
+            [
+              10,
+              10
+            ],
+            [
+              0,
+              10
+            ],
+            [
+              0,
+              0
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "large": 9007199254740993,
+        "owner": "Ada"
+      }
+    },
+    {
+      "type": "edit_geometry",
+      "site_id": "actor-a",
+      "seq": 2,
+      "ts": 2,
+      "feature_id": "parcel",
+      "gen": {
+        "site_id": "actor-a",
+        "seq": 1
+      },
+      "geometry_op": {
+        "action": "move_vertex",
+        "part_id": "part:0",
+        "ring_id": "ring:0:0",
+        "vertex_id": "init:0:2",
+        "coord": [
+          11,
+          11
+        ]
+      }
+    },
+    {
+      "type": "edit_geometry",
+      "site_id": "actor-a",
+      "seq": 3,
+      "ts": 3,
+      "feature_id": "parcel",
+      "gen": {
+        "site_id": "actor-a",
+        "seq": 1
+      },
+      "geometry_op": {
+        "action": "add_ring",
+        "part_id": "part:0",
+        "ring_id": "ring:actor-a:3",
+        "ring": [
+          [
+            2,
+            2
+          ],
+          [
+            2,
+            4
+          ],
+          [
+            4,
+            4
+          ],
+          [
+            4,
+            2
+          ]
+        ]
+      }
+    },
+    {
+      "type": "set_property",
+      "site_id": "actor-a",
+      "seq": 4,
+      "ts": 4,
+      "feature_id": "parcel",
+      "property_key": "status",
+      "property_value": "review"
+    },
+    {
+      "type": "delete_property",
+      "site_id": "actor-a",
+      "seq": 5,
+      "ts": 5,
+      "feature_id": "parcel",
+      "property_key": "owner"
+    },
+    {
+      "type": "insert_feature",
+      "site_id": "actor-a",
+      "seq": 6,
+      "ts": 6,
+      "feature_id": "retired",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -71,
+          42,
+          8
+        ]
+      },
+      "properties": {
+        "active": false
+      }
+    },
+    {
+      "type": "delete_feature",
+      "site_id": "actor-a",
+      "seq": 7,
+      "ts": 7,
+      "feature_id": "retired"
+    }
+  ]
+}
