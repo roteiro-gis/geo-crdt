@@ -1,0 +1,401 @@
+{
+  "version": 3,
+  "id": "protocol-v3",
+  "document_id": "protocol-golden",
+  "site_id": "actor-a",
+  "base_hash": "b22e8ba77763eecb370574e9d94dfa602649c93cda66600eeaa568de86b2879a",
+  "clock": 7,
+  "vector_clock": {
+    "actor-a": 7
+  },
+  "applied": {
+    "actor-a": 7
+  },
+  "outbox_ops": [
+    {
+      "type": "insert_feature",
+      "site_id": "actor-a",
+      "seq": 1,
+      "ts": 1,
+      "feature_id": "parcel",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              0,
+              0
+            ],
+            [
+              10,
+              0
+            ],
+            [
+              10,
+              10
+            ],
+            [
+              0,
+              10
+            ],
+            [
+              0,
+              0
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "large": 9007199254740993,
+        "owner": "Ada"
+      }
+    },
+    {
+      "type": "edit_geometry",
+      "site_id": "actor-a",
+      "seq": 2,
+      "ts": 2,
+      "feature_id": "parcel",
+      "gen": {
+        "site_id": "actor-a",
+        "seq": 1
+      },
+      "geometry_op": {
+        "action": "move_vertex",
+        "part_id": "part:0",
+        "ring_id": "ring:0:0",
+        "vertex_id": "init:0:2",
+        "coord": [
+          11,
+          11
+        ]
+      }
+    },
+    {
+      "type": "edit_geometry",
+      "site_id": "actor-a",
+      "seq": 3,
+      "ts": 3,
+      "feature_id": "parcel",
+      "gen": {
+        "site_id": "actor-a",
+        "seq": 1
+      },
+      "geometry_op": {
+        "action": "add_ring",
+        "part_id": "part:0",
+        "ring_id": "ring:actor-a:3",
+        "ring": [
+          [
+            2,
+            2
+          ],
+          [
+            2,
+            4
+          ],
+          [
+            4,
+            4
+          ],
+          [
+            4,
+            2
+          ]
+        ]
+      }
+    },
+    {
+      "type": "set_property",
+      "site_id": "actor-a",
+      "seq": 4,
+      "ts": 4,
+      "feature_id": "parcel",
+      "property_key": "status",
+      "property_value": "review"
+    },
+    {
+      "type": "delete_property",
+      "site_id": "actor-a",
+      "seq": 5,
+      "ts": 5,
+      "feature_id": "parcel",
+      "property_key": "owner"
+    },
+    {
+      "type": "insert_feature",
+      "site_id": "actor-a",
+      "seq": 6,
+      "ts": 6,
+      "feature_id": "retired",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -71,
+          42,
+          8
+        ]
+      },
+      "properties": {
+        "active": false
+      }
+    },
+    {
+      "type": "delete_feature",
+      "site_id": "actor-a",
+      "seq": 7,
+      "ts": 7,
+      "feature_id": "retired"
+    }
+  ],
+  "features": [
+    {
+      "id": "parcel",
+      "create_reg": {
+        "ts": 1,
+        "site_id": "actor-a",
+        "seq": 1
+      },
+      "gen_id": {
+        "site_id": "actor-a",
+        "seq": 1
+      },
+      "gen_stamp": {
+        "ts": 1,
+        "site_id": "actor-a",
+        "seq": 1
+      },
+      "seen_gens": [
+        {
+          "site_id": "actor-a",
+          "seq": 1
+        }
+      ],
+      "properties": {
+        "large": {
+          "value": 9007199254740993,
+          "reg": {
+            "ts": 1,
+            "site_id": "actor-a",
+            "seq": 1
+          }
+        },
+        "owner": {
+          "deleted": true,
+          "reg": {
+            "ts": 5,
+            "site_id": "actor-a",
+            "seq": 5
+          }
+        },
+        "status": {
+          "value": "review",
+          "reg": {
+            "ts": 4,
+            "site_id": "actor-a",
+            "seq": 4
+          }
+        }
+      },
+      "geometry": {
+        "type": "Polygon",
+        "dims": 2,
+        "parts": [
+          {
+            "id": "part:0",
+            "key": {
+              "init": 0
+            },
+            "part_type": "Polygon",
+            "rings": [
+              {
+                "id": "ring:0:0",
+                "key": {
+                  "init": 0
+                },
+                "exterior": true,
+                "vertices": [
+                  {
+                    "id": "init:0:0",
+                    "key": {
+                      "init": 0
+                    },
+                    "coord": [
+                      0,
+                      0
+                    ]
+                  },
+                  {
+                    "id": "init:0:1",
+                    "parent": "init:0:0",
+                    "key": {
+                      "init": 1
+                    },
+                    "coord": [
+                      10,
+                      0
+                    ]
+                  },
+                  {
+                    "id": "init:0:2",
+                    "parent": "init:0:1",
+                    "key": {
+                      "init": 2
+                    },
+                    "coord": [
+                      11,
+                      11
+                    ],
+                    "move_reg": {
+                      "ts": 2,
+                      "site_id": "actor-a",
+                      "seq": 2
+                    }
+                  },
+                  {
+                    "id": "init:0:3",
+                    "parent": "init:0:2",
+                    "key": {
+                      "init": 3
+                    },
+                    "coord": [
+                      0,
+                      10
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": "ring:actor-a:3",
+                "key": {
+                  "stamp": {
+                    "ts": 3,
+                    "site_id": "actor-a",
+                    "seq": 3
+                  }
+                },
+                "vertices": [
+                  {
+                    "id": "v:actor-a:3:0",
+                    "key": {
+                      "init": 0
+                    },
+                    "coord": [
+                      2,
+                      2
+                    ]
+                  },
+                  {
+                    "id": "v:actor-a:3:1",
+                    "parent": "v:actor-a:3:0",
+                    "key": {
+                      "init": 1
+                    },
+                    "coord": [
+                      2,
+                      4
+                    ]
+                  },
+                  {
+                    "id": "v:actor-a:3:2",
+                    "parent": "v:actor-a:3:1",
+                    "key": {
+                      "init": 2
+                    },
+                    "coord": [
+                      4,
+                      4
+                    ]
+                  },
+                  {
+                    "id": "v:actor-a:3:3",
+                    "parent": "v:actor-a:3:2",
+                    "key": {
+                      "init": 3
+                    },
+                    "coord": [
+                      4,
+                      2
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "retired",
+      "create_reg": {
+        "ts": 6,
+        "site_id": "actor-a",
+        "seq": 6
+      },
+      "delete_reg": {
+        "ts": 7,
+        "site_id": "actor-a",
+        "seq": 7
+      },
+      "gen_id": {
+        "site_id": "actor-a",
+        "seq": 6
+      },
+      "gen_stamp": {
+        "ts": 6,
+        "site_id": "actor-a",
+        "seq": 6
+      },
+      "seen_gens": [
+        {
+          "site_id": "actor-a",
+          "seq": 6
+        }
+      ],
+      "properties": {
+        "active": {
+          "value": false,
+          "reg": {
+            "ts": 6,
+            "site_id": "actor-a",
+            "seq": 6
+          }
+        }
+      },
+      "geometry": {
+        "type": "Point",
+        "dims": 3,
+        "parts": [
+          {
+            "id": "part:0",
+            "key": {
+              "init": 0
+            },
+            "part_type": "Point",
+            "rings": [
+              {
+                "id": "ring:0:0",
+                "key": {
+                  "init": 0
+                },
+                "vertices": [
+                  {
+                    "id": "init:0:0",
+                    "key": {
+                      "init": 0
+                    },
+                    "coord": [
+                      -71,
+                      42,
+                      8
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

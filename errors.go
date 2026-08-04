@@ -50,6 +50,10 @@ var (
 	// the sender instead of merging deltas.
 	ErrCompactionGap = errors.New("crdt: compaction gap")
 
+	// ErrRebaseUnsafe reports that an epoch rebase would discard operations
+	// that are not yet causally stable, published, or dependency-resolved.
+	ErrRebaseUnsafe = errors.New("crdt: unsafe rebase")
+
 	// ErrUnsupportedGeometry reports a GeoJSON geometry the library does not
 	// model (for example GeometryCollection).
 	ErrUnsupportedGeometry = errors.New("crdt: unsupported geometry")

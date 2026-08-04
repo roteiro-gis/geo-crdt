@@ -16,13 +16,30 @@ func NewDocumentID() DocumentID {
 	return DocumentID(NewSiteID())
 }
 
+// CoordinateLayout is the coordinate arity of a geometry or edit.
+type CoordinateLayout string
+
+const (
+	LayoutXY  CoordinateLayout = "XY"
+	LayoutXYZ CoordinateLayout = "XYZ"
+)
+
+func layoutForDimensions(dims int) CoordinateLayout {
+	if dims == 3 {
+		return LayoutXYZ
+	}
+	return LayoutXY
+}
+
 // Coord is a coordinate value. Coordinates are opaque numeric positions;
-// callers own CRS interpretation and transformation. Z is honored only when
-// the target geometry carries three dimensions and is otherwise ignored.
+// callers own CRS interpretation and transformation. Set LayoutXYZ when Z
+// is semantically present, including when its value is zero. The zero layout
+// denotes XY, except that a non-zero Z is treated as XYZ for compatibility.
 type Coord struct {
-	X float64
-	Y float64
-	Z float64
+	X      float64
+	Y      float64
+	Z      float64
+	Layout CoordinateLayout
 }
 
 // Position returns the coordinate as a GeoJSON position of the given
@@ -30,6 +47,16 @@ type Coord struct {
 func (c Coord) Position(dims int) []float64 {
 	if dims >= 3 {
 		return []float64{c.X, c.Y, c.Z}
+	}
+	return []float64{c.X, c.Y}
+}
+
+func (c Coord) operationPosition() []float64 {
+	if c.Layout == LayoutXYZ || (c.Layout == "" && c.Z != 0) {
+		return []float64{c.X, c.Y, c.Z}
+	}
+	if c.Layout != "" && c.Layout != LayoutXY {
+		return nil
 	}
 	return []float64{c.X, c.Y}
 }

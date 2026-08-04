@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"log"
 
-	crdt "github.com/i-norden/geo-crdt"
+	crdt "github.com/roteiro-gis/geo-crdt"
 )
 
 func main() {
@@ -41,7 +41,9 @@ func main() {
 	if _, err := siteB.MergeOps(received); err != nil {
 		log.Fatal(err)
 	}
-	siteA.MarkSynced(watermark)
+	if err := siteA.MarkSynced(watermark); err != nil {
+		log.Fatal(err)
+	}
 
 	fmt.Println(string(siteB.Geometry()))
 }

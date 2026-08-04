@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 )
 
 // propertyState is one last-writer-wins property register. Deleted registers
@@ -45,8 +46,10 @@ func decodeProperties(properties map[string]propertyState) map[string]any {
 			continue
 		}
 		var value any
-		// Values are validated as JSON on entry, so this cannot fail.
-		if err := json.Unmarshal(state.value, &value); err != nil {
+		decoder := json.NewDecoder(strings.NewReader(string(state.value)))
+		decoder.UseNumber()
+		// Values are validated as JSON on entry and snapshot restore.
+		if err := decoder.Decode(&value); err != nil {
 			panic(fmt.Sprintf("crdt: stored property %q is not valid JSON: %v", key, err))
 		}
 		decoded[key] = value
@@ -77,11 +80,7 @@ func cloneRawMessage(raw json.RawMessage) json.RawMessage {
 // canonicalJSON re-encodes a JSON value in Go's deterministic encoding
 // (object keys sorted), for content hashing.
 func canonicalJSON(raw json.RawMessage) (json.RawMessage, error) {
-	var value any
-	if err := json.Unmarshal(raw, &value); err != nil {
-		return nil, err
-	}
-	return json.Marshal(value)
+	return canonicalPayloadJSON(raw)
 }
 
 // sortedPropertyKeys returns property keys in deterministic order.

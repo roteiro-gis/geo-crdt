@@ -1,7 +1,7 @@
 # geo-crdt
 
-`geo-crdt` is a zero-dependency Go library of conflict-free replicated data
-types (CRDTs) for collaborative editing of GeoJSON feature collections —
+`geo-crdt` is a Go library of conflict-free replicated data types (CRDTs)
+for collaborative editing of GeoJSON feature collections —
 parcels, trails, utility networks — across replicas that sync over any
 transport, in any order, with offline edits.
 
@@ -15,17 +15,19 @@ transport, in any order, with offline edits.
 - **Merges never brick**: operations waiting on missing dependencies buffer
   and drain automatically; permanently inapplicable operations quarantine
   into a `MergeResult` instead of failing the merge
-- **Full-fidelity snapshots**: checkpoints carry every register, tombstone,
-  and stable ID, so restored replicas keep syncing with their lineage
+- **Full-fidelity snapshots**: checkpoints preserve sparse history and the
+  unsent outbox, so restored replicas resume syncing without losing changes
 - **Topology policy**: optional validation on export and deterministic
-  polygon repair views (closure, orientation, duplicates, degenerate rings)
+  polygon repair views backed by complete OGC polygon validity checks
+- **Bounded-history epochs**: coordinated `Rebase` cuts replace causally
+  stable history with a compact base under a new document namespace
 
 Applications provide transport, persistence, authorization, rendering, and
 CRS policy. Coordinates are opaque numbers to the library.
 
 ## Status
 
-Pre-release. The API and the versioned JSON wire format (protocol version 2)
+Pre-release. The API and the versioned JSON wire format (protocol version 3)
 may change before `v1`.
 
 ## Usage
@@ -66,7 +68,9 @@ result, err := local.MergeDelta(delta)
 // Push-based: ship the local outbox, acknowledge after the send.
 ops, watermark := local.PendingOps()
 // ... transmit ops ...
-local.MarkSynced(watermark)
+if err := local.MarkSynced(watermark); err != nil {
+	return err
+}
 ```
 
 Checkpointing and compaction:
@@ -93,17 +97,17 @@ storage interfaces.
 | Vertex/ring/part liveness | Monotone tombstone | Delete wins over concurrent move |
 
 Operation identity is `(site_id, seq)` with contiguous per-site sequence
-numbers; LWW ordering is `(ts, site_id)` with Lamport timestamps. Vector
+numbers; LWW ordering is `(ts, site_id, seq)` with Lamport timestamps. Vector
 clocks advance only through contiguous prefixes, so lost operations are
-always re-requested. Only documents with equal `BaseHash` (same original
-base state) can merge.
+always re-requested. Only documents with equal `DocumentID` and `BaseHash`
+can merge.
 
 Concurrent edits can produce topologically invalid intermediate polygons;
 that is inherent to coordinate-level merging. Use
 `WithTopologyPolicy(crdt.ValidateOnExport)` to gate exports and
 `WithPolygonRepair` for deterministic view-level repairs. Validation covers
-closure, orientation, degeneracy, and self-intersection with tolerances
-relative to each ring's extent; hole containment is not checked.
+complete OGC polygon and multipolygon validity, including ring crossings,
+hole containment, and polygon overlap.
 
 ## License
 

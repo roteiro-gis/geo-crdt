@@ -69,6 +69,13 @@ func (c *GeometryCRDT) Clock() uint64 {
 	return c.clock
 }
 
+// Layout returns the geometry's coordinate layout.
+func (c *GeometryCRDT) Layout() CoordinateLayout {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return layoutForDimensions(c.state.dims)
+}
+
 // Ops returns a copy of the operation log.
 func (c *GeometryCRDT) Ops() []GeometryOp {
 	c.mu.Lock()
@@ -114,7 +121,6 @@ func (c *GeometryCRDT) Apply(op GeometryOp) error {
 	op.SiteID = c.siteID
 	op.Seq = nextSeq
 	op.Timestamp = nextClock
-	op = op.truncateCoords(c.state.dims)
 	derived, err := op.deriveCreatedIDs()
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrInvalidCommand, err)

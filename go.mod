@@ -1,3 +1,5 @@
-module github.com/i-norden/geo-crdt
+module github.com/roteiro-gis/geo-crdt
 
-go 1.24
+go 1.25.0
+
+require github.com/peterstace/simplefeatures v0.59.0

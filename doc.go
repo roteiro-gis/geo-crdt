@@ -32,8 +32,8 @@
 // contiguous per-site sequence number (Seq), and a Lamport timestamp.
 // (SiteID, Seq) identifies the operation; vector clocks advance only
 // through contiguous sequence prefixes, so a lost operation is always
-// detected and re-requested — sync self-heals. (Timestamp, SiteID) orders
-// concurrent writes for last-writer-wins resolution.
+// detected and re-requested — sync self-heals. (Timestamp, SiteID, Seq)
+// provides a total order for last-writer-wins resolution.
 //
 // Site IDs must be unique per replica session; use NewSiteID. Reusing a
 // site ID after restoring from a snapshot that does not cover all of that
@@ -52,9 +52,8 @@
 // (that is inherent to coordinate-level merging, not a bug). The topology
 // policy (WithTopologyPolicy) decides whether GeoJSON exports validate, and
 // WithPolygonRepair configures deterministic view-level repairs.
-// Validation covers ring closure, orientation, degeneracy, and
-// self-intersection with tolerances relative to each ring's extent; hole
-// containment and ring-ring crossing are not checked.
+// Validation delegates complete Polygon and MultiPolygon validity to an OGC
+// Simple Features geometry kernel.
 //
 // # Sync
 //
@@ -67,10 +66,10 @@
 //   - Snapshot / NewDocumentFromSnapshot: full-fidelity state transfer that
 //     compacts history; restored replicas keep syncing with their lineage
 //
-// Only documents sharing a base lineage (equal BaseHash) can merge:
-// documents created empty share one lineage, documents loaded from the
-// same FeatureCollection share another, and snapshots inherit the lineage
-// they were taken from.
+// Only documents sharing a namespace and base lineage (equal DocumentID and
+// BaseHash) can merge. Rebase provides an explicit, coordinated epoch cut
+// that moves visible state into a new namespace and discards causally stable
+// operation history.
 //
 // Applications provide transport, persistence (see OpStore/SnapshotStore
 // and MemStore), authorization, rendering, and CRS policy. Coordinates are

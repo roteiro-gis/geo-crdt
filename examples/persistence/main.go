@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"log"
 
-	crdt "github.com/i-norden/geo-crdt"
+	crdt "github.com/roteiro-gis/geo-crdt"
 )
 
 func main() {
@@ -29,7 +29,9 @@ func main() {
 	if err := store.Append(ctx, "test-document", pending); err != nil {
 		log.Fatal(err)
 	}
-	doc.MarkSynced(watermark)
+	if err := doc.MarkSynced(watermark); err != nil {
+		log.Fatal(err)
+	}
 
 	// Periodic checkpoint.
 	snapshot, err := doc.Snapshot("nightly")
@@ -48,7 +50,9 @@ func main() {
 	if err := store.Append(ctx, "test-document", pending); err != nil {
 		log.Fatal(err)
 	}
-	doc.MarkSynced(watermark)
+	if err := doc.MarkSynced(watermark); err != nil {
+		log.Fatal(err)
+	}
 
 	// Rehydrate: load the checkpoint, then replay ops beyond it.
 	loaded, err := store.Load(ctx, "test-document", "nightly")

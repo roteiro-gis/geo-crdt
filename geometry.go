@@ -135,7 +135,6 @@ func newGeometryState(geometry json.RawMessage) (*geometryState, error) {
 	typ := GeometryType(header.Type)
 	g := &geometryState{
 		typ:       typ,
-		dims:      2,
 		partsByID: make(map[string]*partState),
 		pending:   make(map[depKey][]GeometryOp),
 	}
@@ -147,28 +146,36 @@ func newGeometryState(geometry json.RawMessage) (*geometryState, error) {
 		if err != nil {
 			return nil, err
 		}
-		g.setDims(dims)
+		if err := g.setDims(dims); err != nil {
+			return nil, err
+		}
 		partCoords = [][][][3]float64{{{point}}}
 	case GeometryLineString:
 		line, dims, err := parseLineJSON(header.Coordinates)
 		if err != nil {
 			return nil, err
 		}
-		g.setDims(dims)
+		if err := g.setDims(dims); err != nil {
+			return nil, err
+		}
 		partCoords = [][][][3]float64{{line}}
 	case GeometryPolygon:
 		rings, dims, err := parsePolygonJSON(header.Coordinates)
 		if err != nil {
 			return nil, err
 		}
-		g.setDims(dims)
+		if err := g.setDims(dims); err != nil {
+			return nil, err
+		}
 		partCoords = [][][][3]float64{rings}
 	case GeometryMultiPoint:
 		points, dims, err := parseLineJSON(header.Coordinates)
 		if err != nil {
 			return nil, err
 		}
-		g.setDims(dims)
+		if err := g.setDims(dims); err != nil {
+			return nil, err
+		}
 		for _, point := range points {
 			partCoords = append(partCoords, [][][3]float64{{point}})
 		}
@@ -182,7 +189,9 @@ func newGeometryState(geometry json.RawMessage) (*geometryState, error) {
 			if err != nil {
 				return nil, err
 			}
-			g.setDims(dims)
+			if err := g.setDims(dims); err != nil {
+				return nil, err
+			}
 			partCoords = append(partCoords, [][][3]float64{line})
 		}
 	case GeometryMultiPolygon:
@@ -195,13 +204,18 @@ func newGeometryState(geometry json.RawMessage) (*geometryState, error) {
 			if err != nil {
 				return nil, err
 			}
-			g.setDims(dims)
+			if err := g.setDims(dims); err != nil {
+				return nil, err
+			}
 			partCoords = append(partCoords, rings)
 		}
 	case "GeometryCollection":
 		return nil, fmt.Errorf("%w: GeometryCollection", ErrUnsupportedGeometry)
 	default:
 		return nil, fmt.Errorf("%w: %q", ErrUnsupportedGeometry, header.Type)
+	}
+	if g.dims == 0 {
+		g.dims = 2
 	}
 
 	if typ == GeometryLineString && len(partCoords[0][0]) < 2 {
@@ -235,15 +249,19 @@ func newGeometryState(geometry json.RawMessage) (*geometryState, error) {
 	return g, nil
 }
 
-func (g *geometryState) setDims(dims int) {
-	if dims > g.dims {
+func (g *geometryState) setDims(dims int) error {
+	if g.dims == 0 {
 		g.dims = dims
+		return nil
 	}
+	if dims != g.dims {
+		return fmt.Errorf("%w: mixed %s and %s coordinate layouts",
+			ErrInvalidGeometry, layoutForDimensions(g.dims), layoutForDimensions(dims))
+	}
+	return nil
 }
 
-// parsePositionJSON parses one GeoJSON position. Positions require two
-// finite values; a third (altitude) is preserved, further values are ignored
-// per RFC 7946's advice against them.
+// parsePositionJSON parses one GeoJSON XY or XYZ position.
 func parsePositionJSON(data json.RawMessage) ([3]float64, int, error) {
 	var raw []float64
 	if err := json.Unmarshal(data, &raw); err != nil {
@@ -253,8 +271,8 @@ func parsePositionJSON(data json.RawMessage) ([3]float64, int, error) {
 }
 
 func parsePosition(raw []float64) ([3]float64, int, error) {
-	if len(raw) < 2 {
-		return [3]float64{}, 0, fmt.Errorf("%w: position requires at least 2 values", ErrInvalidGeometry)
+	if len(raw) != 2 && len(raw) != 3 {
+		return [3]float64{}, 0, fmt.Errorf("%w: position requires exactly 2 or 3 values", ErrInvalidGeometry)
 	}
 	dims := 2
 	pos := [3]float64{raw[0], raw[1]}
@@ -283,17 +301,23 @@ func parseLineJSON(data json.RawMessage) ([][3]float64, int, error) {
 }
 
 func parseLine(raw [][]float64) ([][3]float64, int, error) {
-	dims := 2
+	dims := 0
 	line := make([][3]float64, len(raw))
 	for i, position := range raw {
 		pos, posDims, err := parsePosition(position)
 		if err != nil {
 			return nil, 0, err
 		}
-		if posDims > dims {
+		if dims == 0 {
 			dims = posDims
+		} else if posDims != dims {
+			return nil, 0, fmt.Errorf("%w: mixed %s and %s coordinate layouts",
+				ErrInvalidGeometry, layoutForDimensions(dims), layoutForDimensions(posDims))
 		}
 		line[i] = pos
+	}
+	if dims == 0 {
+		dims = 2
 	}
 	return line, dims, nil
 }
@@ -310,21 +334,27 @@ func parsePolygonJSON(data json.RawMessage) ([][][3]float64, int, error) {
 	if len(raw) == 0 {
 		return nil, 0, fmt.Errorf("%w: polygon requires at least one ring", ErrInvalidGeometry)
 	}
-	dims := 2
+	dims := 0
 	rings := make([][][3]float64, len(raw))
 	for i, rawRing := range raw {
 		ring, ringDims, err := parseLine(rawRing)
 		if err != nil {
 			return nil, 0, err
 		}
-		if ringDims > dims {
+		if dims == 0 {
 			dims = ringDims
+		} else if ringDims != dims {
+			return nil, 0, fmt.Errorf("%w: polygon mixes %s and %s coordinate layouts",
+				ErrInvalidGeometry, layoutForDimensions(dims), layoutForDimensions(ringDims))
 		}
 		ring = openRing(ring)
-		if len(ring) < 3 {
+		if distinctPositionCountXY(ring) < 3 {
 			return nil, 0, fmt.Errorf("%w: polygon ring %d requires at least 3 distinct positions", ErrInvalidGeometry, i)
 		}
 		rings[i] = ring
+	}
+	if dims == 0 {
+		dims = 2
 	}
 	return rings, dims, nil
 }
@@ -335,6 +365,14 @@ func openRing(ring [][3]float64) [][3]float64 {
 		return ring[:len(ring)-1]
 	}
 	return ring
+}
+
+func distinctPositionCountXY(positions [][3]float64) int {
+	distinct := make(map[[2]float64]struct{}, len(positions))
+	for _, position := range positions {
+		distinct[[2]float64{position[0], position[1]}] = struct{}{}
+	}
+	return len(distinct)
 }
 
 // --- Operation application ---
@@ -481,7 +519,7 @@ func (g *geometryState) applyVertexAction(op GeometryOp) applyResult {
 		if ring.seq.has(vertexID) {
 			return duplicate()
 		}
-		if fail := checkWireCoord(op.Coord); fail.reason != "" {
+		if fail := checkWireCoord(op.Coord, g.dims); fail.reason != "" {
 			return fail
 		}
 		if op.AfterVertexID != "" && !ring.seq.has(op.AfterVertexID) {
@@ -490,7 +528,7 @@ func (g *geometryState) applyVertexAction(op GeometryOp) applyResult {
 		ring.seq.insert(vertexID, op.AfterVertexID, opKey(op.stamp()), coordFromOp(op.Coord))
 		return applied()
 	case ActionMoveVertex:
-		if fail := checkWireCoord(op.Coord); fail.reason != "" {
+		if fail := checkWireCoord(op.Coord, g.dims); fail.reason != "" {
 			return fail
 		}
 		if !ring.seq.has(op.VertexID) {
@@ -523,12 +561,16 @@ func (g *geometryState) applyAddRing(op GeometryOp) applyResult {
 	if _, exists := part.ringsByID[ringID]; exists {
 		return duplicate()
 	}
-	coords, _, err := parseLine(op.Ring)
+	coords, dims, err := parseLine(op.Ring)
 	if err != nil {
 		return quarantined("add_ring coordinates: %v", err)
 	}
+	if dims != g.dims {
+		return quarantined("add_ring layout %s does not match geometry layout %s",
+			layoutForDimensions(dims), layoutForDimensions(g.dims))
+	}
 	coords = openRing(coords)
-	if len(coords) < 3 {
+	if distinctPositionCountXY(coords) < 3 {
 		return quarantined("add_ring requires at least 3 distinct positions")
 	}
 
@@ -577,6 +619,10 @@ func (g *geometryState) applyAddPart(op GeometryOp) applyResult {
 	}
 	if partGeom.typ != g.typ.partType() {
 		return quarantined("add_part geometry is %s; %s requires %s parts", partGeom.typ, g.typ, g.typ.partType())
+	}
+	if partGeom.dims != g.dims {
+		return quarantined("add_part layout %s does not match geometry layout %s",
+			layoutForDimensions(partGeom.dims), layoutForDimensions(g.dims))
 	}
 
 	// Re-identify the parsed part under IDs derived from this operation.
@@ -647,9 +693,10 @@ func coordFromOp(raw []float64) [3]float64 {
 
 // checkWireCoord quarantines operations whose coordinate payload could never
 // be valid; non-finite values would make the geometry unencodable as JSON.
-func checkWireCoord(coord []float64) applyResult {
-	if len(coord) < 2 || len(coord) > 3 {
-		return quarantined("coordinate requires 2 or 3 values, got %d", len(coord))
+func checkWireCoord(coord []float64, dims int) applyResult {
+	if len(coord) != dims {
+		return quarantined("coordinate layout %s does not match geometry layout %s",
+			layoutForDimensions(len(coord)), layoutForDimensions(dims))
 	}
 	for _, v := range coord {
 		if !isFinite(v) {
@@ -700,14 +747,14 @@ func (g *geometryState) validateLocalOp(op GeometryOp) error {
 			if part.typ == GeometryPoint {
 				return fmt.Errorf("%w: Point geometry supports move_vertex only", ErrInvalidCommand)
 			}
-			if err := validateOpCoord(op.Coord); err != nil {
+			if err := validateOpCoord(op.Coord, g.dims); err != nil {
 				return err
 			}
 			if op.AfterVertexID != "" && !ring.seq.has(op.AfterVertexID) {
 				return fmt.Errorf("%w: after_vertex_id %q does not exist", ErrInvalidCommand, op.AfterVertexID)
 			}
 		case ActionMoveVertex:
-			if err := validateOpCoord(op.Coord); err != nil {
+			if err := validateOpCoord(op.Coord, g.dims); err != nil {
 				return err
 			}
 			if !ring.seq.has(op.VertexID) {
@@ -736,11 +783,15 @@ func (g *geometryState) validateLocalOp(op GeometryOp) error {
 		if part.typ != GeometryPolygon {
 			return fmt.Errorf("%w: add_ring requires a Polygon part", ErrInvalidCommand)
 		}
-		coords, _, err := parseLine(op.Ring)
+		coords, dims, err := parseLine(op.Ring)
 		if err != nil {
 			return fmt.Errorf("%w: %v", ErrInvalidCommand, err)
 		}
-		if len(openRing(coords)) < 3 {
+		if dims != g.dims {
+			return fmt.Errorf("%w: add_ring layout %s does not match geometry layout %s",
+				ErrInvalidCommand, layoutForDimensions(dims), layoutForDimensions(g.dims))
+		}
+		if distinctPositionCountXY(openRing(coords)) < 3 {
 			return fmt.Errorf("%w: add_ring requires at least 3 distinct positions", ErrInvalidCommand)
 		}
 	case ActionRemoveRing:
@@ -769,6 +820,10 @@ func (g *geometryState) validateLocalOp(op GeometryOp) error {
 		if partGeom.typ != g.typ.partType() {
 			return fmt.Errorf("%w: %s requires %s parts, got %s", ErrInvalidCommand, g.typ, g.typ.partType(), partGeom.typ)
 		}
+		if partGeom.dims != g.dims {
+			return fmt.Errorf("%w: add_part layout %s does not match geometry layout %s",
+				ErrInvalidCommand, layoutForDimensions(partGeom.dims), layoutForDimensions(g.dims))
+		}
 	case ActionRemovePart:
 		if !g.typ.isMulti() {
 			return fmt.Errorf("%w: remove_part requires a multipart geometry", ErrInvalidCommand)
@@ -786,9 +841,10 @@ func (g *geometryState) validateLocalOp(op GeometryOp) error {
 	return nil
 }
 
-func validateOpCoord(coord []float64) error {
-	if len(coord) < 2 || len(coord) > 3 {
-		return fmt.Errorf("%w: coordinate requires 2 or 3 values", ErrInvalidCommand)
+func validateOpCoord(coord []float64, dims int) error {
+	if len(coord) != dims {
+		return fmt.Errorf("%w: coordinate layout %s does not match geometry layout %s",
+			ErrInvalidCommand, layoutForDimensions(len(coord)), layoutForDimensions(dims))
 	}
 	for _, v := range coord {
 		if !isFinite(v) {
@@ -833,10 +889,14 @@ func (g *geometryState) info() []PartInfo {
 			if ring.deleted {
 				continue
 			}
+			vertices := ring.seq.visibleVertices()
+			for i := range vertices {
+				vertices[i].Coord.Layout = layoutForDimensions(g.dims)
+			}
 			info.Rings = append(info.Rings, RingInfo{
 				ID:       ring.id,
 				Exterior: ring.exterior,
-				Vertices: ring.seq.visibleVertices(),
+				Vertices: vertices,
 			})
 		}
 		parts = append(parts, info)

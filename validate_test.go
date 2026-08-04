@@ -23,8 +23,8 @@ func TestValidatePolygonRings(t *testing.T) {
 		{"too few positions", [][][]float64{{{0, 0}, {1, 1}, {0, 0}}}, "at least 4"},
 		{"unclosed", [][][]float64{{{0, 0}, {10, 0}, {10, 10}, {0, 10}}}, "not closed"},
 		{"cw exterior", [][][]float64{{{0, 0}, {0, 10}, {10, 10}, {10, 0}, {0, 0}}}, "counter-clockwise"},
-		{"zero area", [][][]float64{{{0, 0}, {5, 0}, {10, 0}, {0, 0}}}, "degenerate"},
-		{"bowtie", [][][]float64{{{0, 0}, {10, 10}, {10, 0}, {0, 10}, {0, 0}}}, "self-intersects"},
+		{"zero area", [][][]float64{{{0, 0}, {5, 0}, {10, 0}, {0, 0}}}, "OGC validity"},
+		{"bowtie", [][][]float64{{{0, 0}, {10, 10}, {10, 0}, {0, 10}, {0, 0}}}, "OGC validity"},
 		{
 			"valid hole",
 			[][][]float64{
@@ -41,6 +41,31 @@ func TestValidatePolygonRings(t *testing.T) {
 			},
 			"clockwise",
 		},
+		{
+			"hole outside exterior",
+			[][][]float64{
+				{{0, 0}, {10, 0}, {10, 10}, {0, 10}, {0, 0}},
+				{{20, 20}, {20, 25}, {25, 25}, {25, 20}, {20, 20}},
+			},
+			"OGC validity",
+		},
+		{
+			"hole crossing exterior",
+			[][][]float64{
+				{{0, 0}, {10, 0}, {10, 10}, {0, 10}, {0, 0}},
+				{{5, -1}, {5, 5}, {8, 5}, {8, -1}, {5, -1}},
+			},
+			"OGC validity",
+		},
+		{
+			"nested holes",
+			[][][]float64{
+				{{0, 0}, {20, 0}, {20, 20}, {0, 20}, {0, 0}},
+				{{2, 2}, {2, 18}, {18, 18}, {18, 2}, {2, 2}},
+				{{5, 5}, {5, 10}, {10, 10}, {10, 5}, {5, 5}},
+			},
+			"OGC validity",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -55,6 +80,38 @@ func TestValidatePolygonRings(t *testing.T) {
 				t.Fatalf("expected error containing %q, got %v", tt.wantErr, err)
 			}
 		})
+	}
+}
+
+func TestValidatePolygonRingsMalformedArityNeverPanics(t *testing.T) {
+	t.Parallel()
+
+	cases := [][][][]float64{
+		{{{}, {1, 0}, {1, 1}, {}}},
+		{{{0}, {1, 0}, {1, 1}, {0}}},
+		{{{0, 0}, {1}, {1, 1}, {0, 0}}},
+	}
+	for _, rings := range cases {
+		assertNoPanic(t, func() {
+			if err := ValidatePolygonRings(rings); err == nil {
+				t.Fatalf("malformed positions were accepted: %v", rings)
+			}
+		})
+	}
+}
+
+func TestValidateGeometryViewRejectsOverlappingMultiPolygon(t *testing.T) {
+	t.Parallel()
+
+	raw := json.RawMessage(`{
+		"type":"MultiPolygon",
+		"coordinates":[
+			[[[0,0],[10,0],[10,10],[0,10],[0,0]]],
+			[[[5,5],[15,5],[15,15],[5,15],[5,5]]]
+		]
+	}`)
+	if err := validateGeometryView(raw); err == nil || !strings.Contains(err.Error(), "OGC validity") {
+		t.Fatalf("overlapping multipolygon error = %v", err)
 	}
 }
 

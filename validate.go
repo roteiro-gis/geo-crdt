@@ -3,23 +3,8 @@ package crdt
 import (
 	"encoding/json"
 	"fmt"
-	"math"
-	"sort"
-)
 
-// Geometric predicates use tolerances relative to each ring's extent, so
-// validation behaves identically for parcel-sized rings in degrees and in
-// projected meters. Exact OGC validity (hole containment, ring crossing) is
-// out of scope; see the package documentation for the checks performed.
-const (
-	// relativeAreaEpsilon flags a ring as degenerate when its area is
-	// smaller than (extent * relativeAreaEpsilon)^2... i.e. the ring is
-	// thinner than a billionth of its own bounding-box diagonal.
-	relativeAreaEpsilon = 1e-9
-
-	// relativeCollinearEpsilon bounds the distance (relative to segment
-	// length) at which a point counts as lying on a segment.
-	relativeCollinearEpsilon = 1e-12
+	sfgeom "github.com/peterstace/simplefeatures/geom"
 )
 
 // ValidatePolygonRings checks that polygon rings (in closed GeoJSON form,
@@ -28,13 +13,13 @@ const (
 //   - each ring has at least 4 positions and is closed
 //   - no ring is degenerate (zero area relative to its extent)
 //   - the exterior ring winds counter-clockwise, interior rings clockwise
-//   - no ring self-intersects
-//
-// Hole containment and ring-ring crossing are not checked.
+//   - complete OGC polygon validity, including ring simplicity, hole
+//     containment, ring crossings, and connected interiors
 func ValidatePolygonRings(rings [][][]float64) error {
 	if len(rings) == 0 {
 		return fmt.Errorf("%w: polygon must have at least one ring", ErrInvalidTopology)
 	}
+	layout := 0
 	for i, ring := range rings {
 		name := "exterior ring"
 		if i > 0 {
@@ -43,26 +28,44 @@ func ValidatePolygonRings(rings [][][]float64) error {
 		if len(ring) < 4 {
 			return fmt.Errorf("%w: %s must have at least 4 positions, got %d", ErrInvalidTopology, name, len(ring))
 		}
+		for j, position := range ring {
+			if len(position) != 2 && len(position) != 3 {
+				return fmt.Errorf("%w: %s position %d requires exactly 2 or 3 values",
+					ErrInvalidTopology, name, j)
+			}
+			if layout == 0 {
+				layout = len(position)
+			} else if len(position) != layout {
+				return fmt.Errorf("%w: polygon mixes coordinate layouts", ErrInvalidTopology)
+			}
+			for _, value := range position {
+				if !isFinite(value) {
+					return fmt.Errorf("%w: %s position %d must be finite", ErrInvalidTopology, name, j)
+				}
+			}
+		}
 		first, last := ring[0], ring[len(ring)-1]
 		if first[0] != last[0] || first[1] != last[1] {
 			return fmt.Errorf("%w: %s is not closed", ErrInvalidTopology, name)
 		}
 
-		// Self-intersection is checked before degeneracy: a bowtie has zero
-		// signed area, and "self-intersects" is the actionable diagnosis.
-		if ringSelfIntersects(ring) {
-			return fmt.Errorf("%w: %s self-intersects", ErrInvalidTopology, name)
-		}
 		area := signedAreaXY(ring)
-		if degenerateArea(area, ringExtent(ring)) {
-			return fmt.Errorf("%w: %s is degenerate (zero area)", ErrInvalidTopology, name)
-		}
 		if i == 0 && area < 0 {
 			return fmt.Errorf("%w: exterior ring must be counter-clockwise", ErrInvalidTopology)
 		}
 		if i > 0 && area > 0 {
 			return fmt.Errorf("%w: %s must be clockwise", ErrInvalidTopology, name)
 		}
+	}
+	raw, err := json.Marshal(struct {
+		Type        string        `json:"type"`
+		Coordinates [][][]float64 `json:"coordinates"`
+	}{Type: string(GeometryPolygon), Coordinates: rings})
+	if err != nil {
+		return fmt.Errorf("%w: encode polygon for validation: %v", ErrInvalidTopology, err)
+	}
+	if _, err := sfgeom.UnmarshalGeoJSON(raw); err != nil {
+		return fmt.Errorf("%w: OGC validity: %v", ErrInvalidTopology, err)
 	}
 	return nil
 }
@@ -123,6 +126,9 @@ func validateGeometryView(raw json.RawMessage) error {
 			if err := ValidatePolygonRings(rings); err != nil {
 				return err
 			}
+		}
+		if _, err := sfgeom.UnmarshalGeoJSON(raw); err != nil {
+			return fmt.Errorf("%w: OGC validity: %v", ErrInvalidTopology, err)
 		}
 	}
 	return nil
@@ -191,31 +197,6 @@ func signedAreaXY(ring [][]float64) float64 {
 	return area / 2.0
 }
 
-// ringExtent returns the bounding-box diagonal of a ring, the scale that
-// relative tolerances are anchored to.
-func ringExtent(ring [][]float64) float64 {
-	if len(ring) == 0 {
-		return 0
-	}
-	minX, minY := ring[0][0], ring[0][1]
-	maxX, maxY := minX, minY
-	for _, position := range ring {
-		minX = math.Min(minX, position[0])
-		maxX = math.Max(maxX, position[0])
-		minY = math.Min(minY, position[1])
-		maxY = math.Max(maxY, position[1])
-	}
-	return math.Hypot(maxX-minX, maxY-minY)
-}
-
-func degenerateArea(area, extent float64) bool {
-	if extent == 0 {
-		return true
-	}
-	threshold := extent * relativeAreaEpsilon
-	return math.Abs(area) <= threshold*threshold
-}
-
 // degenerateRing reports whether a ring has fewer than three distinct
 // consecutive positions.
 func degenerateRing(ring [][]float64) bool {
@@ -224,103 +205,6 @@ func degenerateRing(ring [][]float64) bool {
 		distinct = distinct[:len(distinct)-1]
 	}
 	return len(distinct) < 3
-}
-
-// ringSelfIntersects checks non-adjacent edge pairs, pruning with a sweep
-// over edge bounding boxes so typical rings cost O(n log n).
-func ringSelfIntersects(ring [][]float64) bool {
-	n := len(ring) - 1 // closed ring: last edge ends at position 0
-	if n < 4 {
-		return false
-	}
-
-	type edge struct {
-		index      int
-		minX, maxX float64
-		minY, maxY float64
-	}
-	edges := make([]edge, n)
-	for i := 0; i < n; i++ {
-		a, b := ring[i], ring[i+1]
-		edges[i] = edge{
-			index: i,
-			minX:  math.Min(a[0], b[0]), maxX: math.Max(a[0], b[0]),
-			minY: math.Min(a[1], b[1]), maxY: math.Max(a[1], b[1]),
-		}
-	}
-	sort.Slice(edges, func(i, j int) bool { return edges[i].minX < edges[j].minX })
-
-	for i := 0; i < len(edges); i++ {
-		for j := i + 1; j < len(edges); j++ {
-			if edges[j].minX > edges[i].maxX {
-				break
-			}
-			if edges[j].minY > edges[i].maxY || edges[i].minY > edges[j].maxY {
-				continue
-			}
-			a, b := edges[i].index, edges[j].index
-			if a > b {
-				a, b = b, a
-			}
-			// Adjacent edges share a vertex and always "touch".
-			if b == a+1 || (a == 0 && b == n-1) {
-				continue
-			}
-			if segmentsIntersectXY(ring[a], ring[a+1], ring[b], ring[b+1]) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-// segmentsIntersectXY reports whether segments (p1,p2) and (p3,p4) intersect,
-// including endpoint touches and collinear overlap, using tolerances
-// relative to the segment lengths.
-func segmentsIntersectXY(p1, p2, p3, p4 []float64) bool {
-	d1 := crossXY(p3, p4, p1)
-	d2 := crossXY(p3, p4, p2)
-	d3 := crossXY(p1, p2, p3)
-	d4 := crossXY(p1, p2, p4)
-
-	if ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) &&
-		((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0)) {
-		return true
-	}
-
-	// Collinear/touch cases: |cross| ~ segmentLength * distance, so the
-	// threshold scales with the squared segment length.
-	len34 := squaredLengthXY(p3, p4)
-	len12 := squaredLengthXY(p1, p2)
-	if math.Abs(d1) <= relativeCollinearEpsilon*len34 && onSegmentXY(p3, p4, p1) {
-		return true
-	}
-	if math.Abs(d2) <= relativeCollinearEpsilon*len34 && onSegmentXY(p3, p4, p2) {
-		return true
-	}
-	if math.Abs(d3) <= relativeCollinearEpsilon*len12 && onSegmentXY(p1, p2, p3) {
-		return true
-	}
-	if math.Abs(d4) <= relativeCollinearEpsilon*len12 && onSegmentXY(p1, p2, p4) {
-		return true
-	}
-	return false
-}
-
-// crossXY computes the cross product of vectors (b-a) and (c-a).
-func crossXY(a, b, c []float64) float64 {
-	return (b[0]-a[0])*(c[1]-a[1]) - (b[1]-a[1])*(c[0]-a[0])
-}
-
-func squaredLengthXY(a, b []float64) float64 {
-	dx, dy := b[0]-a[0], b[1]-a[1]
-	return dx*dx + dy*dy
-}
-
-// onSegmentXY checks whether collinear point p lies within segment (a, b).
-func onSegmentXY(a, b, p []float64) bool {
-	return math.Min(a[0], b[0]) <= p[0] && p[0] <= math.Max(a[0], b[0]) &&
-		math.Min(a[1], b[1]) <= p[1] && p[1] <= math.Max(a[1], b[1])
 }
 
 func samePositionXY(a, b []float64) bool {
