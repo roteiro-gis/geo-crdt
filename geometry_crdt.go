@@ -186,6 +186,10 @@ func (c *GeometryCRDT) mergeOpsLocked(incoming []GeometryOp) (MergeResult, error
 		if err := op.validateEnvelope(); err != nil {
 			return MergeResult{}, err
 		}
+		if op.SiteID == c.siteID && op.Seq > c.localSeq {
+			return MergeResult{}, fmt.Errorf("%w: received op %s beyond local history %d; site identity reused",
+				ErrInvalidSyncState, op.ref(), c.localSeq)
+		}
 		if op.Timestamp > nextClock {
 			nextClock = op.Timestamp
 		}

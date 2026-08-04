@@ -407,6 +407,32 @@ func TestMergeOps_InvalidEnvelopesRejected(t *testing.T) {
 	}
 }
 
+func TestStandaloneSiteIdentityReuseDetectedBeforeLocalMint(t *testing.T) {
+	t.Parallel()
+
+	replica := newTestCRDT(t, "site-a", json.RawMessage(
+		`{"type":"LineString","coordinates":[[0,0],[1,1]]}`,
+	))
+	remote := GeometryOp{
+		Action: ActionMoveVertex, SiteID: "site-a", Seq: 1, Timestamp: 1,
+		PartID: part0, RingID: ring0, VertexID: InitialVertexID(0, 0),
+		Coord: []float64{2, 2},
+	}
+	if _, err := replica.MergeOps([]GeometryOp{remote}); !errors.Is(err, ErrInvalidSyncState) {
+		t.Fatalf("site reuse error = %v", err)
+	}
+	if len(replica.Ops()) != 0 {
+		t.Fatalf("rejected identity reuse changed history: %+v", replica.Ops())
+	}
+	if err := replica.Apply(MoveVertexOp(part0, ring0, InitialVertexID(0, 0), Coord{X: 3, Y: 3})); err != nil {
+		t.Fatal(err)
+	}
+	ops := replica.Ops()
+	if len(ops) != 1 || ops[0].Seq != 1 {
+		t.Fatalf("local mint did not retain sequence 1: %+v", ops)
+	}
+}
+
 // Non-finite coordinates are content, not envelope: they quarantine so one
 // broken op cannot block a batch, and they never reach the JSON encoder.
 func TestMergeOps_NonFiniteCoordQuarantined(t *testing.T) {
