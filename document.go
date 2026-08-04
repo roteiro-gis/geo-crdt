@@ -210,6 +210,18 @@ func (d *Document) BaseHash() string {
 	return d.baseHash
 }
 
+// GeometryLayout returns the coordinate layout of a visible feature
+// geometry.
+func (d *Document) GeometryLayout(id ID) (CoordinateLayout, bool) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	feature, ok := d.features[id]
+	if !ok || !feature.visible() || feature.geometry == nil {
+		return "", false
+	}
+	return layoutForDimensions(feature.geometry.dims), true
+}
+
 // VectorClock returns, per site, the sequence number through which this
 // document contiguously knows that site's operations (including operations
 // folded by compaction). Operations staged beyond a delivery gap are
@@ -387,7 +399,6 @@ func (d *Document) buildLocalOp(seq, timestamp uint64, command any) (DocumentOp,
 	geometryOp.SiteID = d.siteID
 	geometryOp.Seq = seq
 	geometryOp.Timestamp = timestamp
-	geometryOp = geometryOp.truncateCoords(feature.geometry.dims)
 	geometryOp, err = geometryOp.deriveCreatedIDs()
 	if err != nil {
 		return DocumentOp{}, fmt.Errorf("%w: %v", ErrInvalidCommand, err)

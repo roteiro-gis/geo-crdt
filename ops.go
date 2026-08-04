@@ -230,7 +230,7 @@ func InsertVertexOp(partID, ringID, afterVertexID string, coord Coord) GeometryO
 		PartID:        partID,
 		RingID:        ringID,
 		AfterVertexID: afterVertexID,
-		Coord:         coord.Position(3),
+		Coord:         coord.operationPosition(),
 	}
 }
 
@@ -241,7 +241,7 @@ func MoveVertexOp(partID, ringID, vertexID string, coord Coord) GeometryOp {
 		PartID:   partID,
 		RingID:   ringID,
 		VertexID: vertexID,
-		Coord:    coord.Position(3),
+		Coord:    coord.operationPosition(),
 	}
 }
 
@@ -260,7 +260,7 @@ func DeleteVertexOp(partID, ringID, vertexID string) GeometryOp {
 func AddRingOp(partID string, coords []Coord) GeometryOp {
 	ring := make([][]float64, len(coords))
 	for i, coord := range coords {
-		ring[i] = coord.Position(3)
+		ring[i] = coord.operationPosition()
 	}
 	return GeometryOp{Action: ActionAddRing, PartID: partID, Ring: ring}
 }
@@ -278,25 +278,6 @@ func AddPartOp(geometry json.RawMessage) GeometryOp {
 // RemovePartOp tombstones a part of a multipart geometry.
 func RemovePartOp(partID string) GeometryOp {
 	return GeometryOp{Action: ActionRemovePart, PartID: partID}
-}
-
-// truncateCoords trims local operation coordinates to the geometry's
-// dimension count so recorded operations match what the geometry stores.
-func (op GeometryOp) truncateCoords(dims int) GeometryOp {
-	if len(op.Coord) > dims {
-		op.Coord = op.Coord[:dims]
-	}
-	if op.Ring != nil {
-		ring := make([][]float64, len(op.Ring))
-		for i, position := range op.Ring {
-			if len(position) > dims {
-				position = position[:dims]
-			}
-			ring[i] = position
-		}
-		op.Ring = ring
-	}
-	return op
 }
 
 // --- Document operations ---
