@@ -329,7 +329,10 @@ func cloneKeySnapshot(key KeySnapshot) KeySnapshot {
 func (d *Document) Snapshot(id string) (Snapshot, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	return d.snapshotLocked(id)
+}
 
+func (d *Document) snapshotLocked(id string) (Snapshot, error) {
 	snapshot := Snapshot{
 		Version:       ProtocolVersion,
 		ID:            id,
