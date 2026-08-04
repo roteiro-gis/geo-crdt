@@ -10,7 +10,8 @@ import (
 )
 
 // GeoJSONFeature is the SDK's minimal GeoJSON Feature representation.
-// Geometry is nil for features without geometry ("geometry": null).
+// Geometry is nil for features without geometry ("geometry": null), and
+// property numbers are represented by json.Number.
 type GeoJSONFeature struct {
 	Type       string          `json:"type"`
 	ID         string          `json:"id,omitempty"`
@@ -36,10 +37,10 @@ func parseFeatureCollection(data json.RawMessage) ([]baseFeature, error) {
 	var collection struct {
 		Type     string `json:"type"`
 		Features []struct {
-			Type       string          `json:"type"`
-			ID         json.RawMessage `json:"id,omitempty"`
-			Geometry   json.RawMessage `json:"geometry"`
-			Properties map[string]any  `json:"properties"`
+			Type       string                     `json:"type"`
+			ID         json.RawMessage            `json:"id,omitempty"`
+			Geometry   json.RawMessage            `json:"geometry"`
+			Properties map[string]json.RawMessage `json:"properties"`
 		} `json:"features"`
 	}
 	if err := json.Unmarshal(data, &collection); err != nil {
@@ -63,10 +64,7 @@ func parseFeatureCollection(data json.RawMessage) ([]baseFeature, error) {
 			return nil, fmt.Errorf("%w: duplicate feature id %q", ErrInvalidGeometry, id)
 		}
 		seen[id] = struct{}{}
-		properties, err := encodeProperties(feature.Properties)
-		if err != nil {
-			return nil, fmt.Errorf("feature %s: %w", id, err)
-		}
+		properties := cloneProperties(feature.Properties)
 		geometry := feature.Geometry
 		if isNullGeometry(geometry) {
 			geometry = nil

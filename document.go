@@ -9,7 +9,8 @@ import (
 )
 
 // Feature is the current application-visible state of a GeoJSON feature.
-// Geometry is nil for features without geometry.
+// Geometry is nil for features without geometry. Property numbers are
+// represented by json.Number so reads and re-exports remain lossless.
 type Feature struct {
 	ID         ID              `json:"id"`
 	Geometry   json.RawMessage `json:"geometry"`
