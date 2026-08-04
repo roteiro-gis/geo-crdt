@@ -1,0 +1,11 @@
+go test fuzz v1
+string("\f\f\f\f\f\f\f\f\f\f\f\f\f\f\f\f")
+string("0")
+uint64(1)
+uint64(1)
+string("0")
+string("0")
+string("")
+string("0")
+float64(0.5)
+float64(0.5)

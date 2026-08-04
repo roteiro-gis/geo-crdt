@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("{\"version\":3,\"document_id\":\"d\",\"site_id\":\"s\",\"base_hash\":\"x\",\"features\":[{\"id\":\"f\",\"geometry\":{\"type\":\"Point\",\"dims\":2,\"parts\":[]}}]}")

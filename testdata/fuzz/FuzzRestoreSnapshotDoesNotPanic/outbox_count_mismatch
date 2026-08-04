@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("{\"version\":3,\"document_id\":\"d\",\"site_id\":\"s\",\"base_hash\":\"x\",\"vector_clock\":{\"s\":1},\"applied\":{\"s\":1},\"features\":[]}")

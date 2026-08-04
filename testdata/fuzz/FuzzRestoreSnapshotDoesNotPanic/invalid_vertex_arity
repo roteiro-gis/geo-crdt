@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("{\"version\":3,\"document_id\":\"d\",\"site_id\":\"s\",\"base_hash\":\"x\",\"features\":[{\"id\":\"f\",\"base\":true,\"seen_gens\":[{}],\"geometry\":{\"type\":\"Point\",\"dims\":2,\"parts\":[{\"id\":\"part:0\",\"key\":{\"initial\":true},\"part_type\":\"Point\",\"rings\":[{\"id\":\"ring:0:0\",\"key\":{\"initial\":true},\"vertices\":[{\"id\":\"init:0:0\",\"key\":{\"initial\":true},\"coord\":[1]}]}]}]}}]}")

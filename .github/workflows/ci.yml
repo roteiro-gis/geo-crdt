@@ -76,6 +76,7 @@ jobs:
       - run: go test -run=^$ -parallel=1 -fuzz=FuzzNewGeometryCRDT -fuzztime=10s .
       - run: go test -run=^$ -parallel=1 -fuzz=FuzzMergeOps -fuzztime=10s .
       - run: go test -run=^$ -parallel=1 -fuzz=FuzzMergeDelta -fuzztime=10s .
+      - run: go test -run=^$ -parallel=1 -fuzz=FuzzRestoreSnapshotDoesNotPanic -fuzztime=10s .
 
   performance:
     runs-on: ubuntu-latest
