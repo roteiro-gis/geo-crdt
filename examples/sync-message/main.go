@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"log"
 
-	crdt "github.com/i-norden/geo-crdt"
+	crdt "github.com/roteiro-gis/geo-crdt"
 )
 
 func main() {
