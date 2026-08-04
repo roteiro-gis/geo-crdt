@@ -466,7 +466,9 @@ func TestMemStoreRoundTrip(t *testing.T) {
 	if err := store.Append(ctx, "test-document", pending); err != nil {
 		t.Fatal(err)
 	}
-	source.MarkSynced(watermark)
+	if err := source.MarkSynced(watermark); err != nil {
+		t.Fatal(err)
+	}
 
 	snapshot, err := source.Snapshot("cp-1")
 	if err != nil {

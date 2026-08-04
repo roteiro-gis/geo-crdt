@@ -68,7 +68,9 @@ result, err := local.MergeDelta(delta)
 // Push-based: ship the local outbox, acknowledge after the send.
 ops, watermark := local.PendingOps()
 // ... transmit ops ...
-local.MarkSynced(watermark)
+if err := local.MarkSynced(watermark); err != nil {
+	return err
+}
 ```
 
 Checkpointing and compaction:

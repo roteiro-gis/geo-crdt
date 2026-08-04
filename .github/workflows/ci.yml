@@ -7,17 +7,21 @@ on:
 permissions:
   contents: read
 
+env:
+  GOFLAGS: -mod=readonly
+
 jobs:
   test:
     strategy:
       matrix:
-        go: [stable, oldstable]
+        go: ['1.25.x', '1.26.x']
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ matrix.go }}
+          cache-dependency-path: go.sum
       - name: gofmt
         run: test -z "$(gofmt -l .)"
       - run: go vet ./...
@@ -29,22 +33,43 @@ jobs:
   staticcheck:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: stable
-      - uses: dominikh/staticcheck-action@v1
+          go-version: '1.26.x'
+          cache-dependency-path: go.sum
+      - uses: dominikh/staticcheck-action@9716614d4101e79b4340dd97b10e54d68234e431 # v1.4.1
         with:
-          version: latest
+          version: '2026.1'
           install-go: false
+
+  analyzers:
+    runs-on: ubuntu-latest
+    env:
+      GOBIN: ${{ github.workspace }}/.bin
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.26.x'
+          cache-dependency-path: go.sum
+      - name: install pinned analyzers
+        run: |
+          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2
+          go install github.com/securego/gosec/v2/cmd/gosec@v2.28.0
+          go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
+      - run: .bin/golangci-lint run ./...
+      - run: .bin/gosec ./...
+      - run: .bin/govulncheck ./...
 
   fuzz:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: stable
+          go-version: '1.26.x'
+          cache-dependency-path: go.sum
       - run: go test -run=^$ -parallel=1 -fuzz=FuzzNewGeometryCRDT -fuzztime=10s .
       - run: go test -run=^$ -parallel=1 -fuzz=FuzzMergeOps -fuzztime=10s .
       - run: go test -run=^$ -parallel=1 -fuzz=FuzzMergeDelta -fuzztime=10s .

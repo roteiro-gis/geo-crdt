@@ -41,7 +41,9 @@ func main() {
 	if _, err := siteB.MergeOps(received); err != nil {
 		log.Fatal(err)
 	}
-	siteA.MarkSynced(watermark)
+	if err := siteA.MarkSynced(watermark); err != nil {
+		log.Fatal(err)
+	}
 
 	fmt.Println(string(siteB.Geometry()))
 }

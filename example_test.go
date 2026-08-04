@@ -29,7 +29,9 @@ func ExampleGeometryCRDT() {
 	if _, err := siteB.MergeOps(pending); err != nil {
 		log.Fatal(err)
 	}
-	siteA.MarkSynced(watermark)
+	if err := siteA.MarkSynced(watermark); err != nil {
+		log.Fatal(err)
+	}
 
 	fmt.Println(string(siteB.Geometry()))
 	// Output:

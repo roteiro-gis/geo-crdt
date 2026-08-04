@@ -736,7 +736,9 @@ func TestPendingOpsWatermark(t *testing.T) {
 	if err := c.Apply(MoveVertexOp(part0, ring0, vertexAt(t, c, 2), Coord{X: 11, Y: 11})); err != nil {
 		t.Fatal(err)
 	}
-	c.MarkSynced(watermark)
+	if err := c.MarkSynced(watermark); err != nil {
+		t.Fatal(err)
+	}
 
 	pending, _ = c.PendingOps()
 	if len(pending) != 1 {

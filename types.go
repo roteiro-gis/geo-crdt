@@ -24,13 +24,6 @@ const (
 	LayoutXYZ CoordinateLayout = "XYZ"
 )
 
-func (layout CoordinateLayout) dimensions() int {
-	if layout == LayoutXYZ {
-		return 3
-	}
-	return 2
-}
-
 func layoutForDimensions(dims int) CoordinateLayout {
 	if dims == 3 {
 		return LayoutXYZ

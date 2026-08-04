@@ -3,20 +3,8 @@ package crdt
 import (
 	"encoding/json"
 	"fmt"
-	"math"
 
 	sfgeom "github.com/peterstace/simplefeatures/geom"
-)
-
-// Geometric predicates use tolerances relative to each ring's extent, so
-// validation behaves identically for parcel-sized rings in degrees and in
-// projected meters. Exact OGC validity (hole containment, ring crossing) is
-// out of scope; see the package documentation for the checks performed.
-const (
-	// relativeAreaEpsilon flags a ring as degenerate when its area is
-	// smaller than (extent * relativeAreaEpsilon)^2... i.e. the ring is
-	// thinner than a billionth of its own bounding-box diagonal.
-	relativeAreaEpsilon = 1e-9
 )
 
 // ValidatePolygonRings checks that polygon rings (in closed GeoJSON form,
@@ -207,31 +195,6 @@ func signedAreaXY(ring [][]float64) float64 {
 		area -= ring[j][0] * ring[i][1]
 	}
 	return area / 2.0
-}
-
-// ringExtent returns the bounding-box diagonal of a ring, the scale that
-// relative tolerances are anchored to.
-func ringExtent(ring [][]float64) float64 {
-	if len(ring) == 0 {
-		return 0
-	}
-	minX, minY := ring[0][0], ring[0][1]
-	maxX, maxY := minX, minY
-	for _, position := range ring {
-		minX = math.Min(minX, position[0])
-		maxX = math.Max(maxX, position[0])
-		minY = math.Min(minY, position[1])
-		maxY = math.Max(maxY, position[1])
-	}
-	return math.Hypot(maxX-minX, maxY-minY)
-}
-
-func degenerateArea(area, extent float64) bool {
-	if extent == 0 {
-		return true
-	}
-	threshold := extent * relativeAreaEpsilon
-	return math.Abs(area) <= threshold*threshold
 }
 
 // degenerateRing reports whether a ring has fewer than three distinct
