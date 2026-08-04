@@ -76,3 +76,13 @@ jobs:
       - run: go test -run=^$ -parallel=1 -fuzz=FuzzNewGeometryCRDT -fuzztime=10s .
       - run: go test -run=^$ -parallel=1 -fuzz=FuzzMergeOps -fuzztime=10s .
       - run: go test -run=^$ -parallel=1 -fuzz=FuzzMergeDelta -fuzztime=10s .
+
+  performance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.26.x'
+          cache-dependency-path: go.sum
+      - run: scripts/check-benchmarks.sh
