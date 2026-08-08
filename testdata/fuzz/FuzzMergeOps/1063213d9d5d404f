@@ -1,0 +1,11 @@
+go test fuzz v1
+string("insert_vertex")
+string("0")
+uint64(1)
+uint64(1)
+string("ɔ")
+string("0")
+string("")
+string("0")
+float64(0.5)
+float64(0.0625)
